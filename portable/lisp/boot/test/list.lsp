@@ -161,6 +161,11 @@
   (print (assert (list-to-array '()) #())) 
   (print (assert (list-to-array '("kakoj-to text")) #("kakoj-to text"))))
 
+(defun concatl-test ()
+  "Тест concatl"
+  (print (assert (concatl '((1 2) (3 4) (5 6))) '(1 2 3 4 5 6)))
+  (concatl '(1 2)))
+
 (app-tests)
 (minp-tests)
 (filter-tests)
@@ -182,3 +187,4 @@
 (remove-dupl-tests)
 (reverse-tests)
 (list-to-array-tests)
+(concatl-test)
