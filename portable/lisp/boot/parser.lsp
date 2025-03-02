@@ -34,13 +34,13 @@
 	       (gen-parser (p list) 
 		 (if (null list) nil (funcall p list)))
 	       (merge-result (r1 res2) ; соединить результат r1 в список r2
-		 (print `(merge ,r1 ,res2))
+		;(print `(merge ,r1 ,res2))
 		 (map #'(lambda (r2)
 			  (cons (append (if (pairp r1) r1 (list r1)) (list (car r2)))
 				(cdr r2)))
 		      res2))
 	       (app-parsers (parsers res) ; применить список парсеров после результата
-		 (print `(app ,res))
+		; (print `(app ,res))
 		 (if (null res) nil
 		     (if (null parsers) res
 			 (app-parsers (cdr parsers)
@@ -72,14 +72,13 @@
   ;; parser (A A B) NIL -> ((A) A B)
   ;; parser (A B) (A) -> ((A A) B)
   ;; parser (B) (A A) -> (A A)
-  (parse-or (parse-suc nil)
-  #'(lambda (list)
+#'(lambda (list)
       (labels ((apply (list res)
-		 (if (null list) (list (list res))
-		     (let ((parser-res (funcall parser list)))
-		       (if (null parser-res)
-			   (list (cons res list))
-			   (apply (cdar parser-res) (append res (list (caar parser-res)))))))))
+		(if (null list) (list (list res))
+		    (let ((parser-res (funcall parser list)))
+		      (if (null parser-res)
+			  (list (cons res list))
+			  (apply (cdar parser-res) (append res (list (caar parser-res)))))))))
 	(apply list nil))))
 
 (defun parse-some (parser)

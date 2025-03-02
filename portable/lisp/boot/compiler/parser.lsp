@@ -1,17 +1,17 @@
 (defun parse-char (char)
   "Разбор символа char с учетом пробелов"
-  (parse-app (&&& (skip-spaces) (parse-elem char)) #'second))
+  (parse-app (&&& (skip-spaces) (parse-elem char)) #'car))
 
 (defun parse-decimal ()
   "Разбор десятичного числа"
   (parse-app (&&& (skip-spaces) (parse-some (parse-pred #'is-digit)))
-	     #'(lambda (l) (strtoint (implode (second l)) 10))))
+	     #'(lambda (l) (print `(l ,l)) (strtoint (implode (car l)) 10))))
 
 (defun parse-hex ()
   "Разбор шестнадцатеричного числа"
   (parse-app (&&& (skip-spaces) (parse-char #\0) (parse-elem #\x)
 		  (parse-some (parse-pred #'is-hex-sym)))
-   #'(lambda (l) (strtoint (implode (forth l)) 16))))
+   #'(lambda (l) (strtoint (implode (third l)) 16))))
 
 (defun parse-tnumber ()
   "Разбор десятичного или шестнадцатеричного числа"
@@ -28,7 +28,7 @@
 		  (parse-many (parse-or (parse-pred #'is-alpha)
 					(parse-pred #'is-digit)
 					(parse-pred #'is-lisp-symbol))))
-	     #'(lambda (l) (intern (implode (map #'(lambda (char) (toupper char)) (cons (second l) (third l))))))))
+	     #'(lambda (l) (intern (implode (map #'(lambda (char) (toupper char)) (cons (car l) (second l))))))))
 
 (defun parse-tchar ()
   "Разбор lisp-символа #\\"
@@ -65,7 +65,8 @@
   	    (parse-tchar)
   	    ;;(parse-tfunction)
   	    (parse-tstring)) l)))
-	(print `(parse-atom ,r)))))
+	;(print `(parse-atom ,r))
+	r)))
 
 (defun parse-list ()
   "Разбор списка s-выражений"
