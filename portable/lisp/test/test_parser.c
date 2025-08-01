@@ -10,7 +10,7 @@
 
 /// текущее окружение
 object_t current_env = NULLOBJ;
-/// окружение функции
+/// окружение функции`
 object_t func_env = NULLOBJ;
 
 extern token_t *cur_token; // текущий токен
