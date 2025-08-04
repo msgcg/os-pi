@@ -6,16 +6,22 @@
 #include "alloc.h"
 #include "lexer.h"
 #include "parser.h"
+#include "symbols.h"
 #include "eval.h"
+#include "../error.h"
 
 /// текущее окружение
-object_t current_env = NULLOBJ;
+extern object_t current_env;
 /// окружение функции`
-object_t func_env = NULLOBJ;
+extern object_t func_env;
 
 extern token_t *cur_token; // текущий токен
-int token_error;
+
 token_t token = {LPAREN, 0, ""};
+extern jmp_buf repl_buf;
+int token_error;
+
+void print_debug_lines(char *str, int c, int d) {}
 
 token_t atoms_tokens[] = {
     {T_NUMBER, 45},
@@ -247,17 +253,13 @@ token_t function_tokens[] = {
 };
     
 token_t *tokens;
-jmp_buf jmp_env;
+
 
 char *strupr (char *str);
 object_t parse_list();
 object_t parse();
 
-void parser_error(char *str, ...)
-{
-    printf("%s", str);
-    longjmp(jmp_env, 1);
-}
+
 
 void print_token(token_t *token)
 {
@@ -414,7 +416,7 @@ void test_parse_no_rparen()
     cur_token = &token; 
     tokens = no_rparen_tokens; 
 
-    if (setjmp(jmp_env) == 0) {
+    if (setjmp(repl_buf) == 0) {
         // Попробуем выполнить парсинг
         object_t o = parse();
         // Если нет ошибки - тест провален
@@ -432,7 +434,7 @@ void test_parse_no_rparen_lists()
     count = 0; 
     cur_token = &token; 
     tokens = no_rparen_tokens_lists; 
-    if (setjmp(jmp_env) == 0) {
+    if (setjmp(repl_buf) == 0) {
         object_t o = parse();
         FAIL;
     } else
@@ -494,7 +496,9 @@ void test_parse_array()
     ASSERT(get_value(a->data[0]), 1); 
     ASSERT(get_value(a->data[1]), 2); 
     ASSERT(get_value(a->data[2]), 3); 
-} 
+}
+
+ 
 
 /**
  * Тестируем массив ##(1 2 3)

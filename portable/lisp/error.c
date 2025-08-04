@@ -1,8 +1,11 @@
 #include <stdio.h>
 #include <setjmp.h>
 #include <stdarg.h>
+#include "error.h"
 #include "objects.h"
 #include "eval.h"
+
+jmp_buf jmp_env;
 
 // точка начала цикла REPL
 extern jmp_buf repl_buf;
@@ -55,5 +58,5 @@ void parser_error(char *str, ...)
 	va_end(vals);
 	putchar('\n');
     }
-    longjmp(repl_buf,1);
+    longjmp(jmp_env,1);
 }
