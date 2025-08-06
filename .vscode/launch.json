@@ -8,8 +8,8 @@
       "args": [],
       "stopAtEntry": false,
       "externalConsole": true,
-      "cwd": "d:/Cloud/OneDrive - MSFT/Документы/Visual Studio 2022/kursovaya_3kurs_1sem/os-pi/portable/lisp/test",
-      "program": "d:/Cloud/OneDrive - MSFT/Документы/Visual Studio 2022/kursovaya_3kurs_1sem/os-pi/portable/lisp/test/build/Debug/outDebug",
+      "cwd": ".",
+      "program": "build/Debug/outDebug",
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
       "setupCommands": [
