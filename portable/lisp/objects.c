@@ -3,13 +3,23 @@
 #include <stdlib.h>
 #include <string.h>
 #include <setjmp.h>
-#include "objects.h" 
+#include "objects.h"
 #include "parser.h"
 #include "symbols.h"
 #include "eval.h"
 #include "alloc.h"
 #include "cont.h"
 #include "bind.h"
+
+
+/// static bind
+
+/// окружение функции
+object_t func_env = NULLOBJ;
+/// текущее окружение
+object_t current_env = NULLOBJ;
+
+
 
 /// Индекс последнего большого числа
 int last_bignumber = 0;

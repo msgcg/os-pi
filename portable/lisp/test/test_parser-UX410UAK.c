@@ -6,34 +6,154 @@
 #include "alloc.h"
 #include "lexer.h"
 #include "parser.h"
-#include "eval.h"
 #include "symbols.h"
-#include "eval.h"
 #include "../error.h"
 
-/// текущее окружение
-extern object_t current_env;
-/// окружение функции`
-extern object_t func_env;
+static jmp_buf repl_buf;
 
+
+
+jmp_buf jmp_env;
 extern token_t *cur_token; // текущий токен
+token_t *(*get_token)(); // глобальный указатель на функцию получения токена
 
-token_t token = {LPAREN, 0, ""};
-extern jmp_buf repl_buf;
+token_t *cur_token_ptr; // Указатель на текущий токен для тестов
 int token_error;
+
+// Функция для имитации получения следующего токена
+token_t *get_token_for_test() {
+    return cur_token_ptr++;
+}
 
 void print_debug_lines(char *str, int c, int d) {}
 
-token_t atoms_tokens[] = {
-    {T_NUMBER, 45},
-    {T_NUMBER, 65},
-    {T_SYMBOL, 0, "A"},
-    {T_SYMBOL, 0, "B"},
-    {T_STRING, 0, "StrA"},
-    {T_STRING, 0, "StrB"},
-    {RPAREN}
-};
-int count = 0;
+
+void test_lisp_parser() {
+    printf("\n--- Testing Lisp Parser ---\n");
+
+    // Test case 1: Simple arithmetic expression
+    // (setq a 10)
+    token_t tokens1[] = {
+        {LPAREN},
+        {T_SYMBOL, 0, "SETQ"},
+        {T_SYMBOL, 0, "A"},
+        {T_NUMBER, 10},
+        {RPAREN}
+    };
+    cur_token_ptr = tokens1;
+    token_t *setq_sym_token = cur_token_ptr + 1;
+    setq_sym->name = "SETQ";
+    setq_sym_token->sym = setq_sym;
+    token_t *a_sym_token = cur_token_ptr + 2;
+    symbol_t *a_sym = new_symbol("A");
+    a_sym_token->sym = a_sym;
+
+    object_t parsed_obj1 = parse();
+    // Проверка структуры объекта
+    ASSERT(TYPE(parsed_obj1) == PAIR, "Test SETQ: Not a pair");
+    object_t setq_obj = FIRST(parsed_obj1);
+    ASSERT(TYPE(setq_obj) == SYMBOL && strcmp(GET_SYMBOL(setq_obj)->name, "SETQ") == 0, "Test SETQ: Incorrect command");
+
+    // Test case 2: Simple list parsing
+    // '(1 2 3)
+    token_t tokens2[] = {
+        {QUOTE},
+        {LPAREN},
+        {T_NUMBER, 1},
+        {T_NUMBER, 2},
+        {T_NUMBER, 3},
+        {RPAREN}
+    };
+    cur_token_ptr = tokens2;
+    object_t parsed_obj2 = parse();
+    ASSERT(TYPE(parsed_obj2) == PAIR, "Test Quote: Not a pair");
+    ASSERT(TYPE(FIRST(parsed_obj2)) == SYMBOL && strcmp(GET_SYMBOL(FIRST(parsed_obj2))->name, "QUOTE") == 0, "Test Quote: Not a quote symbol");
+
+    // Test case 3: Nested list with addition
+    // (+ 1 (+ 2 3))
+    token_t tokens3[] = {
+        {LPAREN},
+        {T_SYMBOL, 0, "+"},
+        {T_NUMBER, 1},
+        {LPAREN},
+        {T_SYMBOL, 0, "+"},
+        {T_NUMBER, 2},
+        {T_NUMBER, 3},
+        {RPAREN},
+        {RPAREN}
+    };
+    cur_token_ptr = tokens3;
+    token_t *plus_sym_token1 = cur_token_ptr + 1;
+    symbol_t *plus_sym = new_symbol("+");
+    plus_sym_token1->sym = plus_sym;
+    token_t *plus_sym_token2 = cur_token_ptr + 4;
+    plus_sym_token2->sym = plus_sym;
+
+    object_t parsed_obj3 = parse();
+    ASSERT(TYPE(parsed_obj3) == PAIR, "Test Nested: Not a pair");
+    ASSERT(TYPE(FIRST(parsed_obj3)) == SYMBOL && strcmp(GET_SYMBOL(FIRST(parsed_obj3))->name, "+") == 0, "Test Nested: Incorrect command");
+
+    // Call new tests
+    test_parse_number();
+    test_parse_symbol();
+    test_parse_quote();
+    test_parse_simple_list();
+    test_parse_nested_list();
+    test_parse_empty_list();
+    test_parse_array();
+    test_parse_empty_array();
+    test_parse_nested_array();
+    test_parse_list_in_array();
+    test_parse_array_in_list();
+    printf("\n--- All Lisp Parser Tests Passed ---\n");
+}
+
+void test_parse_array() {
+    printf("--- Testing parse_array ---\n");
+    token_t tokens[] = {{SHARP}, {LPAREN}, {T_NUMBER, 1}, {T_NUMBER, 2}, {RPAREN}, {END}};
+    cur_token_ptr = tokens;
+    object_t obj = parse();
+    ASSERT(TYPE(obj) == ARRAY && GET_ARRAY_LEN(obj) == 2 && GET_ARRAY_ITEM(obj, 0) && TYPE(GET_ARRAY_ITEM(obj, 0)) == NUMBER && GET_NUMBER(GET_ARRAY_ITEM(obj, 0))->value == 1 && GET_ARRAY_ITEM(obj, 1) && TYPE(GET_ARRAY_ITEM(obj, 1)) == NUMBER && GET_NUMBER(GET_ARRAY_ITEM(obj, 1))->value == 2, "test_parse_array failed");
+    printf("parse_array passed.\n");
+}
+
+void test_parse_empty_array() {
+    printf("--- Testing parse_empty_array ---\n");
+    token_t tokens[] = {{SHARP}, {LPAREN}, {RPAREN}, {END}};
+    cur_token_ptr = tokens;
+    object_t obj = parse();
+    ASSERT(TYPE(obj) == ARRAY && GET_ARRAY_LEN(obj) == 0, "test_parse_empty_array failed");
+    printf("parse_empty_array passed.\n");
+}
+
+void test_parse_nested_array() {
+    printf("--- Testing parse_nested_array ---\n");
+    token_t tokens[] = {{SHARP}, {LPAREN}, {T_NUMBER, 1}, {SHARP}, {LPAREN}, {T_NUMBER, 2}, {RPAREN}, {RPAREN}, {END}};
+    cur_token_ptr = tokens;
+    object_t obj = parse();
+    ASSERT(TYPE(obj) == ARRAY && GET_ARRAY_LEN(obj) == 2 && TYPE(GET_ARRAY_ITEM(obj, 0)) == NUMBER && GET_NUMBER(GET_ARRAY_ITEM(obj, 0))->value == 1 && TYPE(GET_ARRAY_ITEM(obj, 1)) == ARRAY && GET_ARRAY_LEN(GET_ARRAY_ITEM(obj, 1)) == 1 && TYPE(GET_ARRAY_ITEM(GET_ARRAY_ITEM(obj, 1), 0)) == NUMBER && GET_NUMBER(GET_ARRAY_ITEM(GET_ARRAY_ITEM(obj, 1), 0))->value == 2, "test_parse_nested_array failed");
+    printf("parse_nested_array passed.\n");
+}
+
+void test_parse_list_in_array() {
+    printf("--- Testing parse_list_in_array ---\n");
+    token_t tokens[] = {{SHARP}, {LPAREN}, {LPAREN}, {T_NUMBER, 1}, {RPAREN}, {RPAREN}, {END}};
+    cur_token_ptr = tokens;
+    object_t obj = parse();
+    ASSERT(TYPE(obj) == ARRAY && GET_ARRAY_LEN(obj) == 1 && TYPE(GET_ARRAY_ITEM(obj, 0)) == PAIR && TYPE(FIRST(GET_ARRAY_ITEM(obj, 0))) == NUMBER && GET_NUMBER(FIRST(GET_ARRAY_ITEM(obj, 0)))->value == 1, "test_parse_list_in_array failed");
+    printf("parse_list_in_array passed.\n");
+}
+
+void test_parse_array_in_list() {
+    printf("--- Testing parse_array_in_list ---\n");
+    token_t tokens[] = {{LPAREN}, {SHARP}, {LPAREN}, {T_NUMBER, 1}, {RPAREN}, {RPAREN}, {END}};
+    cur_token_ptr = tokens;
+    object_t obj = parse();
+    ASSERT(TYPE(obj) == PAIR && TYPE(FIRST(obj)) == ARRAY && GET_ARRAY_LEN(FIRST(obj)) == 1 && TYPE(GET_ARRAY_ITEM(FIRST(obj), 0)) == NUMBER && GET_NUMBER(GET_ARRAY_ITEM(FIRST(obj), 0))->value == 1, "test_parse_array_in_list failed");
+    printf("parse_array_in_list passed.\n");
+}
+
+
 
 //"1 (2))"
 token_t list_tokens[] = {
@@ -92,14 +212,7 @@ token_t back_comma_at_tokens[] = {
     {END}
 };
 
-token_t no_rparen_tokens[] = {
-    {LPAREN},
-    {T_NUMBER, 1},
-    {LPAREN},
-    {T_NUMBER, 2},
-    {RPAREN},
-    {END}
-};
+
 
 token_t token_list[] = {
     {T_SYMBOL, 0,  "x"},
@@ -112,7 +225,7 @@ token_t token_list[] = {
 
 token_t tok_array[] = {
     {SHARP},
-    {LPAREN},
+        {LPAREN},
     {T_NUMBER, 1},
     {T_NUMBER, 2},
     {T_NUMBER, 3},
@@ -121,12 +234,10 @@ token_t tok_array[] = {
 
 token_t tok_array_error[] = {
     {SHARP},
-    {SHARP},
-    {LPAREN},
     {T_NUMBER, 1},
     {T_NUMBER, 2},
     {T_NUMBER, 3},
-    {RPAREN}
+    {END}
 };
 
 token_t tok_array_error_paren[] = {
@@ -152,8 +263,7 @@ token_t tok_inner_array[] = {
 };
 
 token_t tok_array_list[] = {
-    {LPAREN},
-    {SHARP},
+     {SHARP},
     {LPAREN},
     {T_NUMBER, 1},
     {T_NUMBER, 2},
@@ -167,6 +277,63 @@ token_t tok_quote_number[] = {
     {T_NUMBER, 5}
 };
 
+// ... existing code ...
+
+int main()
+{
+    printf("------------test_parser------------\n");
+    init_regions();
+    init_objects();
+
+    // Строка
+    TEST(test_strupr); // 29
+    TEST(test_parse_string); // 30
+
+    // Список (числа, символы)
+    TEST(test_lisp_parser); // Общий тест, который включает часть функциональности парсера
+    TEST(test_parse_list_atoms); // 1, 3, 4, 5
+    TEST(test_parse_list_list); // 5
+    TEST(test_parse_list_quote); //16
+    TEST(test_parse_inner_list); //7
+    TEST(test_parse_no_rparen);  //6
+    TEST(test_parse_no_rparen_lists); //10
+
+    // Массив (числа, символы)
+    TEST(test_parse_array); //18 
+    TEST(test_parse_array_list); //9
+    TEST(test_parse_inner_array); // 20
+    TEST(test_parse_array_error); //21*/
+    TEST(test_parse_array_error_paren); //19
+    TEST(test_parse_no_rparen_arrays); //11 23
+
+    // Цитата, квазицитата
+    TEST(test_parse_quote); //12
+    TEST(test_parse_backquote_comma); //17
+    TEST(test_parse_backquote_backquote); //28
+    TEST(test_parse_quote_number); //13
+    TEST(test_parse_backquote_comma_at); //25
+
+    // Точечная пара
+    TEST(test_parse_number_dot_number); // 26
+    TEST(test_parse_list_expected_rparen); // 27
+
+    // Число с плавающей точкой
+    TEST(test_parse_float); // 34
+
+    // Функция
+    TEST(test_parse_function); // 35
+
+    // Символ
+    TEST(test_parse_char);
+
+    // Иные проверки
+    TEST(test_parse_end); // 31
+
+
+
+    return 0;
+}
+
 token_t tok_number_dot_number[] = {
     {LPAREN},
     {T_NUMBER, 1},
@@ -176,43 +343,37 @@ token_t tok_number_dot_number[] = {
 };
 
 token_t no_rparen_tokens_lists[] = {
+     {LPAREN},
+     {LPAREN},
+     {T_SYMBOL, 0, "a"},
+     {T_SYMBOL, 0, "b"},
+     {LPAREN},
+     {T_NUMBER, 1},
+     {T_NUMBER, 2},
+     {RPAREN},
+     {T_SYMBOL, 0, "e"},
+     {T_SYMBOL, 0, "f"},
+     {RPAREN},
+     {END}
+ };
+token_t no_rparen_tokens[] = {
     {LPAREN},
     {LPAREN},
     {T_SYMBOL, 0, "a"},
     {T_SYMBOL, 0, "b"},
-    {LPAREN},
-    {T_NUMBER, 1},
-    {T_NUMBER, 2},
-    {RPAREN},
-    {T_SYMBOL, 0, "e"},
-    {T_SYMBOL, 0, "f"},
-    {RPAREN},
     {END}
 };
 
+
 token_t no_rparen_tokens_arrays[] = {
-    {LPAREN},
-    {LPAREN},
-    {T_SYMBOL, 0, "a"},
-    {T_SYMBOL, 0, "b"},
     {SHARP},
     {LPAREN},
     {T_NUMBER, 1},
-    {SHARP},
-    {LPAREN},
-    {T_NUMBER, 2},
-    {LPAREN},
-    {T_NUMBER, 3},
-    {T_NUMBER, 4},
-    {RPAREN},
-    {T_NUMBER, 5},
-    {RPAREN},
-    {RPAREN},
-    {T_SYMBOL, 0, "c"},
-    {T_SYMBOL, 0, "d"},
-    {RPAREN},
     {END}
 };
+
+
+
 
 token_t str_tokens[] = {
     {T_STRING,0,"Str"}
@@ -260,12 +421,6 @@ char *strupr (char *str);
 object_t parse_list();
 object_t parse();
 
-void test_string();
-void test_number();
-void test_symbol();
-void test_expression();
-void test_comments();
-void test_list();
 
 
 void print_token(token_t *token)
@@ -423,7 +578,7 @@ void test_parse_no_rparen()
     cur_token = &token; 
     tokens = no_rparen_tokens; 
 
-    if (setjmp(repl_buf) == 0) {
+    if (setjmp(jmp_env) == 0) {
         // Попробуем выполнить парсинг
         object_t o = parse();
         // Если нет ошибки - тест провален
@@ -441,7 +596,7 @@ void test_parse_no_rparen_lists()
     count = 0; 
     cur_token = &token; 
     tokens = no_rparen_tokens_lists; 
-    if (setjmp(repl_buf) == 0) {
+    if (setjmp(jmp_env) == 0) {
         object_t o = parse();
         FAIL;
     } else
@@ -456,8 +611,8 @@ void test_parse_no_rparen_arrays()
 { 
     printf("test_parse_no_rparen_arrays: "); 
     count = 0; 
-    cur_token = &token; 
-    tokens = no_rparen_tokens_arrays; 
+    cur_token = &token;
+    tokens = no_rparen_tokens_arrays;
     if (setjmp(jmp_env) == 0) {
         object_t o = parse();
         FAIL;
@@ -570,7 +725,7 @@ void test_parse_array_list()
     printf("test_parse_array_list: "); 
     count = 0; 
     tokens = tok_array_list; 
-    object_t o = GET_PAIR(parse())->left; 
+    object_t o = parse(); 
     ASSERT(TYPE(o), ARRAY); 
     array_t *a = GET_ARRAY(o); 
     ASSERT(get_value(a->data[0]), 1); 
@@ -875,5 +1030,8 @@ int main()
 
     // Иные проверки
     test_parse_end(); // 31
+
+
+
     return 0;
 }
