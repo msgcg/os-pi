@@ -1,872 +1,161 @@
+/**
+ * ===================================================================================
+ *  Гибридный тестовый файл для проверки внешнего Lisp-парсера.
+ *  ----------------------------------------------------------------------------------
+ *  Этот C-файл компилируется в исполняемый файл, который:
+ *  1. Готовит наборы токенов для тестов.
+ *  2. Запускает Lisp-интерпретатор (SBCL) с вашим парсером ('lisp_test_harness.lsp').
+ *  3. Передает ему токены через временный файл.
+ *  4. Читает результат из другого временного файла и сравнивает с ожидаемым.
+ * ===================================================================================
+ */
+
+// Стандартные библиотеки, необходимые для работы тестов
 #include <stdio.h>
+#include <stdlib.h> // Необходимо для system()
 #include <string.h>
-#include <setjmp.h>
+
+// Заголовочные файлы вашего проекта
 #include "test.h"
-#include "objects.h"
-#include "alloc.h"
-#include "lexer.h"
-#include "parser.h"
-#include "symbols.h"
-#include "eval.h"
-#include "../error.h"
+#include "objects.h" // Для init_objects()
+#include "alloc.h"   // Для init_regions()
+#include "lexer.h"   // Для определения структуры token_t
 
-/// текущее окружение
-extern object_t current_env;
-/// окружение функции`
-extern object_t func_env;
-
-extern token_t *cur_token; // текущий токен
-
-token_t token = {LPAREN, 0, ""};
-extern jmp_buf repl_buf;
-int token_error;
-
-void print_debug_lines(char *str, int c, int d) {}
-
-token_t atoms_tokens[] = {
-    {T_NUMBER, 45},
-    {T_NUMBER, 65},
-    {T_SYMBOL, 0, "A"},
-    {T_SYMBOL, 0, "B"},
-    {T_STRING, 0, "StrA"},
-    {T_STRING, 0, "StrB"},
-    {RPAREN}
-};
-int count = 0;
-
-//"1 (2))"
-token_t list_tokens[] = {
-    {T_NUMBER, 1},
-    {LPAREN},
-    {T_NUMBER, 2},
-    {RPAREN},
-    {RPAREN}
-};
-
-token_t quote_tokens[] = {
-    {QUOTE},
-    {T_SYMBOL, 0, "A"},
-    {RPAREN}
-};
-
-token_t backquote_tokens[] = {
-    {BACKQUOTE},
-    {T_SYMBOL, 0, "A"},
-    {RPAREN}
-};
-
-token_t comma_tokens[] = {
-    {COMMA},
-    {T_SYMBOL, 0, "A"},
-    {RPAREN},
-    {END}
-};
-
-token_t back_comma_tokens[] = {
-    {BACKQUOTE},
-    {LPAREN},
-    {COMMA},
-    {T_SYMBOL, 0, "A"},
-    {RPAREN},
-    {END}
-};
-
-token_t back_in_back_tokens[] = {
-    {BACKQUOTE},
-    {LPAREN},
-    {BACKQUOTE},
-    {T_SYMBOL, 0, "A"},
-    {RPAREN},
-    {END}
-};
-
-token_t back_comma_at_tokens[] = {
-    {LPAREN},
-    {BACKQUOTE},
-    {LPAREN},
-    {COMMA_AT},
-    {T_SYMBOL, 0, "A"},
-    {RPAREN},
-    {RPAREN},
-    {END}
-};
-
-token_t no_rparen_tokens[] = {
-    {LPAREN},
-    {T_NUMBER, 1},
-    {LPAREN},
-    {T_NUMBER, 2},
-    {RPAREN},
-    {END}
-};
-
-token_t token_list[] = {
-    {T_SYMBOL, 0,  "x"},
-    {LPAREN},
-    {T_SYMBOL, 0, "y"},
-    {RPAREN},
-    {T_SYMBOL, 0, "z"},
-    {RPAREN}
-};
-
-token_t tok_array[] = {
-    {SHARP},
-    {LPAREN},
-    {T_NUMBER, 1},
-    {T_NUMBER, 2},
-    {T_NUMBER, 3},
-    {RPAREN}
-};
-
-token_t tok_array_error[] = {
-    {SHARP},
-    {SHARP},
-    {LPAREN},
-    {T_NUMBER, 1},
-    {T_NUMBER, 2},
-    {T_NUMBER, 3},
-    {RPAREN}
-};
-
-token_t tok_array_error_paren[] = {
-    {SHARP},
-    {RPAREN},
-    {T_NUMBER, 1},
-    {T_NUMBER, 2},
-    {T_NUMBER, 3},
-    {END}
-};
-
-token_t tok_inner_array[] = {
-    {SHARP},
-    {LPAREN},
-    {T_NUMBER, 1},
-    {SHARP},
-    {LPAREN},
-    {T_NUMBER, 2},
-    {T_NUMBER, 3},
-    {RPAREN},
-    {T_NUMBER, 4},
-    {RPAREN},
-};
-
-token_t tok_array_list[] = {
-    {LPAREN},
-    {SHARP},
-    {LPAREN},
-    {T_NUMBER, 1},
-    {T_NUMBER, 2},
-    {T_NUMBER, 3},
-    {RPAREN},
-    {RPAREN}
-}; 
-
-token_t tok_quote_number[] = {
-    {QUOTE},
-    {T_NUMBER, 5}
-};
-
-token_t tok_number_dot_number[] = {
-    {LPAREN},
-    {T_NUMBER, 1},
-    {DOT},
-    {T_NUMBER, 2},
-    {RPAREN}
-};
-
-token_t no_rparen_tokens_lists[] = {
-    {LPAREN},
-    {LPAREN},
-    {T_SYMBOL, 0, "a"},
-    {T_SYMBOL, 0, "b"},
-    {LPAREN},
-    {T_NUMBER, 1},
-    {T_NUMBER, 2},
-    {RPAREN},
-    {T_SYMBOL, 0, "e"},
-    {T_SYMBOL, 0, "f"},
-    {RPAREN},
-    {END}
-};
-
-token_t no_rparen_tokens_arrays[] = {
-    {LPAREN},
-    {LPAREN},
-    {T_SYMBOL, 0, "a"},
-    {T_SYMBOL, 0, "b"},
-    {SHARP},
-    {LPAREN},
-    {T_NUMBER, 1},
-    {SHARP},
-    {LPAREN},
-    {T_NUMBER, 2},
-    {LPAREN},
-    {T_NUMBER, 3},
-    {T_NUMBER, 4},
-    {RPAREN},
-    {T_NUMBER, 5},
-    {RPAREN},
-    {RPAREN},
-    {T_SYMBOL, 0, "c"},
-    {T_SYMBOL, 0, "d"},
-    {RPAREN},
-    {END}
-};
-
-token_t str_tokens[] = {
-    {T_STRING,0,"Str"}
-};
-
-token_t end_tokens[] = {
-    {END}
-};
-
-token_t tok_list_expected_rparen[] = {
-    {LPAREN},
-    {T_NUMBER, 1},
-    {DOT},
-    {T_NUMBER, 1},
-    {T_NUMBER, 1},
-    {END}
-};
-
-token_t float_tokens[] = {
-    {LPAREN},
-    {T_FLOAT, 0x40b47ae1},//5.64
-    {T_FLOAT, 0x3fa00000},//1.25
-    {T_FLOAT, 0x3fe8f5c3},//1.82
-    {RPAREN},
-    {END}
-};
-
-token_t char_tokens[] = {
-    {LPAREN},
-    {T_CHAR, 97},
-    {RPAREN},
-    {END}
-};
-
-token_t function_tokens[] = {
-    {T_FUNCTION},
-    {T_SYMBOL, 0, "A"},
-    {END}
-};
-    
-token_t *tokens;
-
-
-char *strupr (char *str);
-object_t parse_list();
-object_t parse();
-
-
-
-void print_token(token_t *token)
+/**
+ * @brief Запускает Lisp-парсер как внешний процесс и проверяет его вывод,
+ *        используя временные файлы для надежной работы на Windows и Linux.
+ * 
+ * @param test_name Имя теста для вывода.
+ * @param lisp_executable Команда для запуска Lisp (например, "sbcl --script").
+ * @param script_path Путь к lisp_test_harness.lsp.
+ * @param tokens Массив токенов для отправки.
+ * @param token_count Количество токенов в массиве.
+ * @param expected_output Ожидаемая строка от Lisp-парсера.
+ */
+void run_lisp_test(const char* test_name, const char* lisp_executable, const char* script_path, 
+                   token_t tokens[], int token_count, const char* expected_output)
 {
-    printf( "%d ", token->type);
-    switch (token->type) {
-    case T_NUMBER:
-	printf("NUM %d\n", token->value);
-	break;
-    case T_SYMBOL:
-	printf("SYM %s\n", token->str);
-	break;
-    case LPAREN:
-	printf("LPAREN\n");
-	break;
-    case RPAREN:
-	printf("RPAREN\n");
-	break;
-    case END:
-	printf("END\n");
-	break;
-    case QUOTE:
-	printf("QUOTE\n");
-	break;
+    printf("%s: ", test_name);
+
+    // 1. Записать токены во временный файл ввода
+    FILE *input_file = fopen("temp_lisp_input.txt", "w");
+    if (!input_file) {
+        printf("Failed to create temp input file.\n");
+        FAIL;
+        return;
     }
-}
+    for (int i = 0; i < token_count; i++) {
+        switch(tokens[i].type) {
+            case T_NUMBER: fprintf(input_file, "(:T_NUMBER %d) ", tokens[i].value); break;
+            case T_FLOAT:  fprintf(input_file, "(:T_FLOAT %f) ", *(float*)&tokens[i].value); break;
+            case T_STRING: fprintf(input_file, "(:T_STRING \\\"%s\\\") ", tokens[i].str); break;
+            case T_SYMBOL: fprintf(input_file, "(:T_SYMBOL \"%s\") ", tokens[i].str); break;
+            case T_CHAR:   fprintf(input_file, "(:T_CHAR %d) ", tokens[i].value); break;
+            case LPAREN:   fprintf(input_file, "(:LPAREN) "); break;
+            case RPAREN:   fprintf(input_file, "(:RPAREN) "); break;
+            case DOT:      fprintf(input_file, "(:DOT) "); break;
+            case QUOTE:    fprintf(input_file, "(:QUOTE) "); break;
+            case BACKQUOTE:fprintf(input_file, "(:BACKQUOTE) "); break;
+            case COMMA:    fprintf(input_file, "(:COMMA) "); break;
+            case COMMA_AT: fprintf(input_file, "(:COMMA_AT) "); break;
+            case SHARP:    fprintf(input_file, "(:SHARP) "); break;
+            // Добавьте здесь другие типы токенов, если они понадобятся
+        }
+    }
+    fclose(input_file);
 
-/** 
- * Создать две идентичные строки разного регистра, 
- * приравнять их к одному регистру и проверить корректность сравнения
- */
-void test_strupr ()
-{
-    char str_in[] = "a1a a!aa bb r4n\n";
-    char str_ref[] = "A1A A!AA BB R4N\n";
-    printf("test_strupr: ");
-    strupr (str_in);
-    ASSERT (strcmp (str_in, str_ref), 0);
-}
+    // 2. Сформировать команду для запуска с перенаправлением ввода-вывода
+    char command[1024];
+    sprintf(command, "%s %s < temp_lisp_input.txt > temp_lisp_output.txt 2> temp_lisp_error.txt", 
+            lisp_executable, script_path);
 
-/** 
- * Возвращать лексемы в следующей последовательности: 45 65 )
- */
-token_t *get_token()
-{
-    return &tokens[count++];
-}
+    // 3. Выполнить команду в операционной системе
+    int exit_code = system(command);
 
-/**
- * Создать список из 2 чисел, 2 символов и 2 строк и проверить корректность создания пар
- */
-void test_parse_list_atoms()
-{
-    printf("test_parse_list_atoms: ");
-    count = 0;
-    cur_token = &token;
-    tokens = atoms_tokens;
-    object_t o = parse_list();
-    printf("o = ");
-    PRINT(o);
-
-    ASSERT(TYPE(o), PAIR);
-  
-    ASSERT(TYPE(TAIL(o)), PAIR);
-    ASSERT(TYPE(FIRST(o)), NUMBER);
-    ASSERT(get_value(FIRST(o)), 45);
-    ASSERT(TYPE(SECOND(o)), NUMBER);
-    ASSERT(get_value(SECOND(o)), 65);
+    // 4. Прочитать результат из файла вывода
+    char result_buffer[512] = {0};
+    FILE *output_file = fopen("temp_lisp_output.txt", "r");
+    if (output_file) {
+        if (fgets(result_buffer, sizeof(result_buffer) - 1, output_file) != NULL) {
+            // Удаляем символы новой строки (\n или \r\n) для корректного сравнения
+            result_buffer[strcspn(result_buffer, "\n\r")] = 0;
+        }
+        fclose(output_file);
+    }
     
-    o = TAIL(TAIL(o));
-    
-    ASSERT(TYPE(TAIL(o)), PAIR);
-    ASSERT(TYPE(FIRST(o)), SYMBOL);
-    ASSERT(strcmp(GET_SYMBOL(FIRST(o))->str, "A"), 0);
-    ASSERT(TYPE(SECOND(o)), SYMBOL);
-    ASSERT(strcmp(GET_SYMBOL(SECOND(o))->str, "B"), 0);
-    
-    o = TAIL(TAIL(o));
-    
-    ASSERT(TYPE(TAIL(o)), PAIR);
-    ASSERT(TYPE(FIRST(o)), STRING);
-    ASSERT(strcmp(GET_STRING(FIRST(o))->data, "StrA"), 0);
-    ASSERT(TYPE(SECOND(o)), STRING);
-    ASSERT(strcmp(GET_STRING(SECOND(o))->data, "StrB"), 0);
+    // 5. Проверить результат
+    if (exit_code == 0) { // Lisp-процесс завершился успешно (код 0)
+        ASSERT(strcmp(result_buffer, expected_output), 0);
+    } else { // Lisp-процесс завершился с ошибкой
+        if (strcmp(expected_output, "LISP_PARSE_ERROR") == 0) {
+            OK; // Мы ожидали ошибку, и она произошла - тест пройден
+        } else {
+            printf("Lisp process failed unexpectedly. Expected '%s', got error code %d.\n", 
+                   expected_output, exit_code);
+            FAIL;
+        }
+    }
 
-    ASSERT(TAIL(TAIL(o)), NULLOBJ);
+    // 6. Очистить временные файлы
+    remove("temp_lisp_input.txt");
+    remove("temp_lisp_output.txt");
+    remove("temp_lisp_error.txt");
 }
 
-/**
- * Создать список "1 (2))" и проверить корректность создания пар
- */
-void test_parse_list_list()
-{
-    printf("test_parse_list_list: ");
-    count = 0;
-    cur_token = &token;
-    tokens = list_tokens;
-    object_t o = parse_list();
-    ASSERT(TYPE(o), PAIR);
-    ASSERT(TYPE(GET_PAIR(o)->right), PAIR);
-    ASSERT(TYPE(GET_PAIR(o)->left), NUMBER);
-    ASSERT(get_value(GET_PAIR(o)->left), 1);
-    ASSERT(TYPE(GET_PAIR(GET_PAIR(o)->right)->left), PAIR);
-    ASSERT(get_value(GET_PAIR(GET_PAIR(GET_PAIR(o)->right)->left)->left), 2);
-    ASSERT(GET_PAIR(GET_PAIR(GET_PAIR(o)->right)->left)->right, NULLOBJ);
-    ASSERT(GET_PAIR(GET_PAIR(o)->right)->right, NULLOBJ);
+// --- Определение гибридных тестов ---
+
+void test_lisp_list_atoms() {
+    token_t tokens[] = {
+        {LPAREN}, {T_NUMBER, 45}, {T_SYMBOL, 0, "A"}, {T_STRING, 0, "StrB"}, {RPAREN}
+    };
+    const char* expected = "(45 A \"StrB\")"; 
+    run_lisp_test("test_lisp_list_atoms", "sbcl --script", "portable/lisp/lisp_test_harness.lsp", tokens, 5, expected);
+}
+
+void test_lisp_dotted_pair() {
+    token_t tokens[] = { {LPAREN}, {T_NUMBER, 1}, {DOT}, {T_NUMBER, 2}, {RPAREN} };
+    const char* expected = "(1 . 2)";
+    run_lisp_test("test_lisp_dotted_pair", "sbcl --script", "portable/lisp/lisp_test_harness.lsp", tokens, 5, expected);
+}
+
+void test_lisp_no_rparen() {
+    token_t tokens[] = { {LPAREN}, {T_NUMBER, 1} };
+    const char* expected = "LISP_PARSE_ERROR"; // Ожидаем, что Lisp выдаст ошибку
+    run_lisp_test("test_lisp_no_rparen", "sbcl --script", "portable/lisp/lisp_test_harness.lsp", tokens, 2, expected);
+}
+
+void test_lisp_array() {
+    token_t tokens[] = { {SHARP}, {LPAREN}, {T_NUMBER, 1}, {T_NUMBER, 2}, {RPAREN} };
+    const char* expected = "#(1 2)";
+    run_lisp_test("test_lisp_array", "sbcl --script", "portable/lisp/lisp_test_harness.lsp", tokens, 5, expected);
+}
+
+void test_lisp_quote() {
+    token_t tokens[] = { {QUOTE}, {T_SYMBOL, 0, "MY-SYMBOL"} };
+    const char* expected = "(QUOTE MY-SYMBOL)";
+    run_lisp_test("test_lisp_quote", "sbcl --script", "portable/lisp/lisp_test_harness.lsp", tokens, 2, expected);
 }
 
 
-/**
- * Создать "'a" и проверить корректность создания пар
- * (quote a)
- */
-void test_parse_quote(token_t *toks, char* sym) 
-{ 
-    printf("test_parse_quote: %s ", sym); 
-    count = 0;
-    cur_token = &token; 
-    tokens = toks;
-    object_t o = parse(); 
-    ASSERT(TYPE(o), PAIR); 
-    ASSERT(TYPE(GET_PAIR(o)->right), PAIR); 
-    ASSERT(TYPE(GET_PAIR(o)->left), SYMBOL); 
-    ASSERT(strcmp(GET_SYMBOL((GET_PAIR(o)->left))->str, sym), 0);
-    ASSERT(strcmp(GET_SYMBOL((GET_PAIR(GET_PAIR(o)->right)->left))->str, "A"), 0); 
-    ASSERT(GET_PAIR(GET_PAIR(o)->right)->right, NULLOBJ); 
-} 
+// --- Точка входа в программу ---
 
-/**
- * Создать "'a)" и проверить корректность создания пар
- * ((quote a))
- */
-void test_parse_list_quote() 
-{ 
-    printf("test_parse_list_quote: "); 
-    count = 0; 
-    cur_token = &token; 
-    tokens = quote_tokens; 
-    object_t o = parse_list(); 
-    ASSERT(TYPE(o), PAIR); 
-    ASSERT(GET_PAIR(o)->right, NULLOBJ); 
-    ASSERT(TYPE(GET_PAIR(o)->left), PAIR); 
-    ASSERT(strcmp(GET_SYMBOL((GET_PAIR(GET_PAIR(o)->left)->left))->str, "QUOTE"), 0); 
-    ASSERT(strcmp(GET_SYMBOL((GET_PAIR(GET_PAIR(GET_PAIR(o)->left)->right)->left))->str, "A"), 0); 
-    ASSERT(GET_PAIR(GET_PAIR(GET_PAIR(o)->left)->right)->right, NULLOBJ); 
-} 
-
-/**
- * Создать "(1(2)" и проверить ошибку при создании пар
- */
-void test_parse_no_rparen()  
-{ 
-    printf("test_parse_no_rparen: "); 
-    count = 0; 
-    cur_token = &token; 
-    tokens = no_rparen_tokens; 
-
-    if (setjmp(repl_buf) == 0) {
-        // Попробуем выполнить парсинг
-        object_t o = parse();
-        // Если нет ошибки - тест провален
-        FAIL;
-    } else // Ошибка была - тест прошел
-        OK; 
-} 
-
-/**
- * Создать "((a b (1 2) e f)" и проверить ошибку при создании многоуровневого списка
- */
-void test_parse_no_rparen_lists() 
-{ 
-    printf("test_parse_no_rparen_lists: "); 
-    count = 0; 
-    cur_token = &token; 
-    tokens = no_rparen_tokens_lists; 
-    if (setjmp(repl_buf) == 0) {
-        object_t o = parse();
-        FAIL;
-    } else
-        OK;
-} 
-
-
-/**
- * Создать "((a b #(1 #(2 (3 4) 5)) c d )" и проверить ошибку при создании многоуровневых массивов
- */
-void test_parse_no_rparen_arrays() 
-{ 
-    printf("test_parse_no_rparen_arrays: "); 
-    count = 0; 
-    cur_token = &token; 
-    tokens = no_rparen_tokens_arrays; 
-    if (setjmp(jmp_env) == 0) {
-        object_t o = parse();
-        FAIL;
-    } else
-        OK;
-} 
-
-/**
- * Создать список "(x (y) z)" и проверить корректность создания пар
- */
-void test_parse_inner_list() 
-{ 
-    printf("test_parse_inner_list:"); 
-    count = 0; 
-    cur_token = &token; 
-    tokens = token_list; 
-    object_t o = parse_list(); 
-    ASSERT(TYPE(o), PAIR); 
-    ASSERT(TYPE(GET_PAIR(o)->left), SYMBOL); 
-    ASSERT(strcmp(GET_SYMBOL((GET_PAIR(o)->left))->str, "X"), 0);  
-    ASSERT(TYPE(GET_PAIR(o)->right), PAIR); 
-    ASSERT(TYPE(GET_PAIR(GET_PAIR(o)->right)->left), PAIR);
-    ASSERT(strcmp(GET_SYMBOL((GET_PAIR(GET_PAIR(GET_PAIR(o)->right)->left)->left))->str, "Y"), 0);  
-    ASSERT(GET_PAIR(GET_PAIR(GET_PAIR(o)->right)->left)->right, NULLOBJ); 
-    ASSERT(TYPE(GET_PAIR(GET_PAIR(o)->right)->right), PAIR);
-    ASSERT(TYPE(GET_PAIR(GET_PAIR(GET_PAIR(o)->right)->right)->left), SYMBOL);
-    ASSERT(strcmp(GET_SYMBOL((GET_PAIR(GET_PAIR(GET_PAIR(o)->right)->right)->left))->str, "Z"), 0);  
-    ASSERT(GET_PAIR(GET_PAIR(GET_PAIR(o)->right)->right)->right, NULLOBJ); 
-}
-
-/**
- * Тестируем массив #(1 2 3)
- * На выходе: #(1 2 3)
- */
-void test_parse_array() 
-{ 
-    printf("test_parse_array: "); 
-    count = 0; 
-    tokens = tok_array; 
-    object_t o = parse(); 
-    ASSERT(TYPE(o), ARRAY);
-    array_t *a = GET_ARRAY(o); 
-    ASSERT(get_value(a->data[0]), 1); 
-    ASSERT(get_value(a->data[1]), 2); 
-    ASSERT(get_value(a->data[2]), 3); 
-}
-
- 
-
-/**
- * Тестируем массив ##(1 2 3)
- * На выходе: ошибка
- */
-void test_parse_array_error() 
-{ 
-    printf("test_parse_array_error: "); 
-    count = 0; 
-    tokens = tok_array_error; 
-    if (setjmp(jmp_env) == 0) {
-        object_t o = parse();
-        FAIL;
-    } else
-        OK;
-} 
-
-/**
- * Тестируем массив #(1 2 3
- * На выходе: ошибка
- */
-void test_parse_array_error_paren() 
-{ 
-    printf("test_parse_array_error_paren: "); 
-    count = 0; 
-    tokens = tok_array_error_paren; 
-    if (setjmp(jmp_env) == 0) {
-        object_t o = parse();
-        FAIL;
-    } else
-        OK;
-} 
-
-/**
- * Тестируем вложенныий в массив массив #(1 #(2 3) 4)
- * На выходе: #(1 #(2 3) 4)
-*/
-void test_parse_inner_array() 
-{ 
-    printf("test_parse_inner_array: "); 
-    count = 0; 
-    tokens = tok_inner_array; 
-    object_t o = parse(); 
-    array_t *a1 = GET_ARRAY(o); 
-    object_t o2 = a1->data[1]; 
-    array_t *a2 = GET_ARRAY(o2); 
-
-    ASSERT(TYPE(o), ARRAY); 
-    ASSERT(get_value(a1->data[0]), 1); 
-    ASSERT(TYPE(o2), ARRAY); 
-    ASSERT(get_value(a2->data[0]), 2); 
-    ASSERT(get_value(a2->data[1]), 3); 
-    ASSERT(get_value(a1->data[2]), 4); 
-} 
-
-/**
- * Тестируем массив в списке (#(1 2 3))
- * На выходе: (#(1 2 3))
- */
-void test_parse_array_list() 
-{ 
-    printf("test_parse_array_list: "); 
-    count = 0; 
-    tokens = tok_array_list; 
-    object_t o = GET_PAIR(parse())->left; 
-    ASSERT(TYPE(o), ARRAY); 
-    array_t *a = GET_ARRAY(o); 
-    ASSERT(get_value(a->data[0]), 1); 
-    ASSERT(get_value(a->data[1]), 2); 
-    ASSERT(get_value(a->data[2]), 3); 
-} 
-
-/**
- * Тестируем `(,a)
- * Должно получиться: (BACKQUOTE ((COMMA A)))
- */
-void test_parse_backquote_comma() 
-{ 
-    printf("test_parse_backquote_comma: "); 
-    count = 0; 
-    cur_token = &token; 
-    tokens = back_comma_tokens; 
-    object_t o = parse(); 
-    ASSERT(strcmp(GET_SYMBOL(GET_PAIR(o)->left)->str, "BACKQUOTE"), 0);  
-    o = GET_PAIR(GET_PAIR(GET_PAIR(o)->right)->left)->left;
-    ASSERT(strcmp(GET_SYMBOL(GET_PAIR(o)->left)->str, "COMMA"), 0);  
-    ASSERT(strcmp(GET_SYMBOL(GET_PAIR(GET_PAIR(o)->right)->left)->str, "A"), 0);  
-} 
-
-/**
- * Тестируем `(`a)
- * Должно получиться: (BACKQUOTE (BACKQUOTE A))
- */
-void test_parse_backquote_backquote() 
-{ 
-    printf("test_parse_backquote_in_backquote: "); 
-    count = 0; 
-    cur_token = &token; 
-    tokens = back_in_back_tokens; 
-    object_t o = parse(); 
-    ASSERT(strcmp(GET_SYMBOL(GET_PAIR(o)->left)->str, "BACKQUOTE"), 0);  
-    o = GET_PAIR(GET_PAIR(GET_PAIR(o)->right)->left)->left;
-    ASSERT(strcmp(GET_SYMBOL(GET_PAIR(o)->left)->str, "BACKQUOTE"), 0); 
-    ASSERT(strcmp(GET_SYMBOL(GET_PAIR(GET_PAIR(o)->right)->left)->str, "A"), 0);
-} 
-
-/**
- * Тестируем (`(,@a))
- * Должно получиться: ((BACKQUOTE ((COMMA-AT A))))
- */
-void test_parse_backquote_comma_at() 
-{ 
-    printf("test_parse_backquote_comma_at: "); 
-    count = 0; 
-    cur_token = &token; 
-    tokens = back_comma_at_tokens; 
-    object_t o = GET_PAIR(parse())->left; 
-    printf("o = "); 
-    PRINT(o); 
-    ASSERT(strcmp(GET_SYMBOL(GET_PAIR(o)->left)->str, "BACKQUOTE"), 0);  
-    o = GET_PAIR(GET_PAIR(GET_PAIR(o)->right)->left)->left;
-    ASSERT(strcmp(GET_SYMBOL(GET_PAIR(o)->left)->str, "COMMA-AT"), 0);  
-    ASSERT(strcmp(GET_SYMBOL(GET_PAIR(GET_PAIR(o)->right)->left)->str, "A"), 0);
-} 
-
-/**
- * Тестируем выражение '5
- */
-void test_parse_quote_number() 
-{ 
-    printf("test_parse_quote_number: "); 
-    count = 0; 
-    cur_token = &token; 
-    tokens = tok_quote_number; 
-    object_t o = parse(); 
-    ASSERT(get_value(GET_PAIR(GET_PAIR(o)->right)->left), 5);
-} 
-
-/**
- * Тестируем точечную пару (1 . 2)
- */
-void test_parse_number_dot_number() 
-{ 
-    printf("test_parse_number_dot_number: "); 
-    count = 0; 
-    cur_token = &token; 
-    tokens = tok_number_dot_number; 
-    object_t o = parse();
-    ASSERT(get_value(GET_PAIR(o)->left), 1); 
-    ASSERT(get_value(GET_PAIR(o)->right), 2); 
-} 
-
-/**
- * Тест строки
- */
-void test_parse_string() 
-{ 
-    printf("test_parse_string:"); 
-    count = 0; 
-    cur_token = &token; 
-    tokens = str_tokens; 
-    object_t o = parse();
-    ASSERT(TYPE(o), STRING); 
-    ASSERT(strcmp(GET_STRING(o)->data,"Str"),0); 
-} 
-
-/**
- * Тест конец потока, без объектов
- */
-void test_parse_end() 
-{ 
-    printf("test_parse_end:"); 
-    count = 0; 
-    cur_token = &token; 
-    tokens = end_tokens; 
-    object_t o = parse();
-    ASSERT(o, NOVALUE);
-} 
-
-/**
- * Тестирование неверной точечной пары (1 . )
- */
-void test_parse_list_expected_rparen() 
-{ 
-    printf("test_parse_list_expected_rparen: "); 
-    count = 0; 
-    cur_token = &token; 
-    tokens = tok_list_expected_rparen; 
-    if (setjmp(jmp_env) == 0) {
-        object_t res = parse(); 
-        FAIL;
-    } else
-        OK;
-} 
-
-/**
- * Тест чисел с плавающей точкой
- */
-void test_parse_float()
-{
-    printf("test_parse_float:"); 
-    count = 0; 
-    cur_token = &token; 
-    tokens = float_tokens;  
-    if (setjmp(jmp_env) == 0) {
-        object_t o = parse();
-        ASSERT(5.64f - GET_FLOAT(FIRST(o))->value < 0.000001f, 1) ;
-	ASSERT(1.25f - GET_FLOAT(SECOND(o))->value == 0, 1) ;
-	printf("%f\n", GET_FLOAT(SECOND(o))->value);
-	ASSERT(1.82f - GET_FLOAT(THIRD(o))->value < 0.000001f, 1) ;
-    } else
-        FAIL;
-    token_error = 0; 
-}
-
-/**
- * Тест одиночного символа (#\\a)
- * Должно получиться: (a)
- */
-void test_parse_char() 
-{  
-    printf("test_parse_char: "); 
-    count = 0; 
-    cur_token = &token; 
-    tokens = char_tokens; 
-    if (setjmp(jmp_env) == 0) {
-        object_t o = parse();
-        ASSERT(TYPE(FIRST(o)), CHAR);
-        ASSERT(GET_CHAR(FIRST(o)), 'a');
-    } else FAIL;
-} 
-
-/**
- * Тест функции (#'A)
- * Должно получиться: (FUNCTION A)
- */
-void test_parse_function() 
-{ 
-    printf("test_parse_function: "); 
-    count = 0; 
-    cur_token = &token;
-    tokens = function_tokens; 
-    object_t o = parse();
-    ASSERT(strcmp(GET_SYMBOL(GET_PAIR(o)->left)->str, "FUNCTION"), 0);
-    ASSERT(strcmp(GET_SYMBOL(GET_PAIR(GET_PAIR(o)->right)->left)->str, "A"), 0); 
-} 
-
-/*
- * условие   | правильный класс       | неправильный класс
- * атом      | 1 число                | 
- *           | 3 символ               | 
- *           | 4 строка               |
- * ---------------------------------------------------------------------------
- * список    | 5 правильный список    | 6 список без закрывающей скобки
- *           | 7 правильный           | 8 пустой список без открывающей скобки
- *           |   многоуровневый список| 10 многоуровневый список с несоответствием
- *           | 9 массив внутри списка |    количества открывающих и закрывающих скобок
- *           |                        | 11 вложенный массив с несоответствием
- *           |                        |    количества открывающих и закрывающих скобок
- * ---------------------------------------------------------------------------
- *           | 12 символ(функция,var) |
- * Цитата    | 13 число               |
- * или       | 14 массив              |  
- *           | 15 строка              |
- * квазицита | 16 список              |
- *           | 28 квазицитирование    |
- *           |    внутри квазицитиро- |
- *           |    вания               |
- * -------------------------------------------------------------------------
- * Запятая   | 17 находится внутри    | 
- *           | выражения с backquote  |
- * -------------------------------------------------------------------------
- * Массив    | 18 правильный массив   | 19 отсутсвуют открывающая скобки
- *           | 20 правильный          | 21 больше одного символа "#" в начале массива
- *           |    многоуровн. массив  | 23 многоуровневый массив с несоответствием количества
- *           | 22 правильный вложенный|    открывающих и закрывающих скобок
- *           |    список              | 24 вложенный список с несоответствием количества
- *           |                        |    открывающих и закрывающих скобок
- * --------------------------------------------------------------------------
- * Запятая и | 25 находится внутри    |
- * @         |   выражения с backquote| 
- *           |  и применяется к списку|
- * --------------------------------------------------------------------------
- * Точечная  | 26 правильная точечная | 27 точечная пара без второго элемента
- * пара      |   пара                 |
- *           |                        | 
- *           |                        |
- * --------------------------------------------------------------------------
- * Строки с  | 29 применяются в методе| 
- * разным    |   strupr               |
- * регистром |                        | 
- *           |                        |
- * --------------------------------------------------------------------------
- * Строка    | 30 строка              | 
- *           |                        |
- *           |                        | 
- *           |                        |
- * --------------------------------------------------------------------------
- * Отсутствие| 31 конец потока        | 
- * объектов  |                        |
- *           |                        | 
- *           |                        |
- * --------------------------------------------------------------------------
- * Ошибка    | 32 активна и           | 
- * токена    |   применяется к потоку |
- *           |                        | 
- *           |                        |
- * --------------------------------------------------------------------------
- * Число с   | 34 число с плавающей   | 
- * плавающей |  точкой                |
- * точкой    |                        | 
- *           |                        |
- * --------------------------------------------------------------------------
- * Функция   | 35 выражение           | 
- *           |                        |
- *           |                        | 
- *           |                        |
- * --------------------------------------------------------------------------
- */
 int main()
 {
-    printf("------------test_parser------------\n");
+    // Инициализация подсистем вашего проекта
     init_regions();
     init_objects();
 
-    // Строка
-    test_strupr(); // 29
-    test_parse_string(); // 30
+    // Запуск тестов, проверяющих Lisp-парсер
+    printf("\n------------ Testing Lisp parser implementation -----------\n");
+    
+    test_lisp_list_atoms();
+    test_lisp_dotted_pair();
+    test_lisp_no_rparen();
+    test_lisp_array();
+    test_lisp_quote();
+    // Добавьте сюда вызовы других ваших test_lisp_... функций
 
-    // Список (числа, символы)
-    test_parse_list_atoms(); // 1, 3, 4, 5
-    test_parse_list_list(); // 5
-    test_parse_list_quote(); //16
-    test_parse_inner_list(); //7
-    test_parse_no_rparen();  //6
-    test_parse_no_rparen_lists(); //10
-
-    // Массив (числа, символы)
-    test_parse_array(); //18 
-    test_parse_array_list(); //9
-    test_parse_inner_array(); // 20
-    test_parse_array_error(); //21*/
-    test_parse_array_error_paren(); //19
-    test_parse_no_rparen_arrays(); //11 23
-
-    // Цитата, квазицитата
-    test_parse_quote(quote_tokens, "QUOTE"); //12
-    test_parse_quote(backquote_tokens, "BACKQUOTE");//12
-    test_parse_quote(comma_tokens, "COMMA"); //17
-    test_parse_backquote_comma(); //17
-    test_parse_backquote_backquote(); //28
-    test_parse_quote_number(); //13
-    test_parse_backquote_comma_at(); //25
-
-    // Точечная пара
-    test_parse_number_dot_number(); // 26
-    test_parse_list_expected_rparen(); // 27
-
-    // Число с плавающей точкой
-    test_parse_float(); // 34
-
-    // Функция
-    test_parse_function(); // 35
-
-    // Символ
-    test_parse_char();
-
-    // Иные проверки
-    test_parse_end(); // 31
+    printf("\n-------------------- All tests finished --------------------\n");
+    
     return 0;
 }

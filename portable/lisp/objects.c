@@ -733,7 +733,7 @@ object_t dump_mem(object_t args)
     printf("symbols: ");
     symbol_t *symb = symbols;
     for (int i = 0; i < last_symbol; i++, symb++)
-    	printf("%d %s %x\n", symb->free, symb->str, (int)symb);
+    	printf("%d %s %p\n", symb->free, symb->str, (void *)symb);
     printf("\n");
     return NULLOBJ;
 }
