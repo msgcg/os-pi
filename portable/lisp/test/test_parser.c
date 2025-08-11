@@ -1,44 +1,23 @@
-/**
- * ===================================================================================
- *  Гибридный тестовый файл для проверки внешнего Lisp-парсера.
- *  ----------------------------------------------------------------------------------
- *  Этот C-файл компилируется в исполняемый файл, который:
- *  1. Готовит наборы токенов для тестов.
- *  2. Запускает Lisp-интерпретатор (SBCL) с вашим парсером ('lisp_test_harness.lsp').
- *  3. Передает ему токены через временный файл.
- *  4. Читает результат из другого временного файла и сравнивает с ожидаемым.
- * ===================================================================================
- */
-
-// Стандартные библиотеки, необходимые для работы тестов
 #include <stdio.h>
-#include <stdlib.h> // Необходимо для system()
+#include <stdlib.h>
 #include <string.h>
 
-// Заголовочные файлы вашего проекта
 #include "test.h"
-#include "objects.h" // Для init_objects()
-#include "alloc.h"   // Для init_regions()
-#include "lexer.h"   // Для определения структуры token_t
+#include "objects.h"
+#include "alloc.h"
+#include "lexer.h"
 
-/**
- * @brief Запускает Lisp-парсер как внешний процесс и проверяет его вывод,
- *        используя временные файлы для надежной работы на Windows и Linux.
- * 
- * @param test_name Имя теста для вывода.
- * @param lisp_executable Команда для запуска Lisp (например, "sbcl --script").
- * @param script_path Путь к lisp_test_harness.lsp.
- * @param tokens Массив токенов для отправки.
- * @param token_count Количество токенов в массиве.
- * @param expected_output Ожидаемая строка от Lisp-парсера.
- */
 void run_lisp_test(const char* test_name, const char* lisp_executable, const char* script_path, 
                    token_t tokens[], int token_count, const char* expected_output)
 {
     printf("%s: ", test_name);
+    
+    // Определяем имена временных файлов
+    const char* input_filename = "temp_lisp_input.txt";
+    const char* output_filename = "temp_lisp_output.txt";
+    const char* error_filename = "temp_lisp_error.txt";
 
-    // 1. Записать токены во временный файл ввода
-    FILE *input_file = fopen("temp_lisp_input.txt", "w");
+    FILE *input_file = fopen(input_filename, "w");
     if (!input_file) {
         printf("Failed to create temp input file.\n");
         FAIL;
@@ -59,103 +38,100 @@ void run_lisp_test(const char* test_name, const char* lisp_executable, const cha
             case COMMA:    fprintf(input_file, "(:COMMA) "); break;
             case COMMA_AT: fprintf(input_file, "(:COMMA_AT) "); break;
             case SHARP:    fprintf(input_file, "(:SHARP) "); break;
-            // Добавьте здесь другие типы токенов, если они понадобятся
+            case T_FUNCTION: fprintf(input_file, "(:T_FUNCTION) "); break;
         }
     }
     fclose(input_file);
 
-    // 2. Сформировать команду для запуска с перенаправлением ввода-вывода
     char command[1024];
-    sprintf(command, "%s %s < temp_lisp_input.txt > temp_lisp_output.txt 2> temp_lisp_error.txt", 
-            lisp_executable, script_path);
-
-    // 3. Выполнить команду в операционной системе
+    // ФОРМИРУЕМ КОМАНДУ, ПЕРЕДАВАЯ ИМЕНА ФАЙЛОВ КАК АРГУМЕНТЫ
+    sprintf(command, "%s %s %s %s %s", 
+            lisp_executable, script_path, input_filename, output_filename, error_filename);
+    
     int exit_code = system(command);
 
-    // 4. Прочитать результат из файла вывода
     char result_buffer[512] = {0};
-    FILE *output_file = fopen("temp_lisp_output.txt", "r");
+    FILE *output_file = fopen(output_filename, "r");
     if (output_file) {
         if (fgets(result_buffer, sizeof(result_buffer) - 1, output_file) != NULL) {
-            // Удаляем символы новой строки (\n или \r\n) для корректного сравнения
             result_buffer[strcspn(result_buffer, "\n\r")] = 0;
         }
         fclose(output_file);
     }
     
-    // 5. Проверить результат
-    if (exit_code == 0) { // Lisp-процесс завершился успешно (код 0)
+    if (exit_code == 0) {
         ASSERT(strcmp(result_buffer, expected_output), 0);
-    } else { // Lisp-процесс завершился с ошибкой
+    } else {
         if (strcmp(expected_output, "LISP_PARSE_ERROR") == 0) {
-            OK; // Мы ожидали ошибку, и она произошла - тест пройден
+            OK;
         } else {
             printf("Lisp process failed unexpectedly. Expected '%s', got error code %d.\n", 
                    expected_output, exit_code);
+            // Попробуем прочитать файл с ошибками, если он есть
+            FILE* err_file = fopen(error_filename, "r");
+            if (err_file) {
+                char err_buf[256];
+                fgets(err_buf, sizeof(err_buf), err_file);
+                printf("  Lisp error: %s\n", err_buf);
+                fclose(err_file);
+            }
             FAIL;
         }
     }
 
-    // 6. Очистить временные файлы
-    remove("temp_lisp_input.txt");
-    remove("temp_lisp_output.txt");
-    remove("temp_lisp_error.txt");
+    remove(input_filename);
+    remove(output_filename);
+    remove(error_filename);
 }
 
 // --- Определение гибридных тестов ---
+
+const char* sbcl_path = "tools\\sbcl\\sbcl.exe --script";
+const char* harness_path = "portable\\lisp\\lisp_test_harness.lsp";
 
 void test_lisp_list_atoms() {
     token_t tokens[] = {
         {LPAREN}, {T_NUMBER, 45}, {T_SYMBOL, 0, "A"}, {T_STRING, 0, "StrB"}, {RPAREN}
     };
     const char* expected = "(45 A \"StrB\")"; 
-    run_lisp_test("test_lisp_list_atoms", "sbcl --script", "portable/lisp/lisp_test_harness.lsp", tokens, 5, expected);
+    run_lisp_test("test_lisp_list_atoms", sbcl_path, harness_path, tokens, 5, expected);
 }
 
 void test_lisp_dotted_pair() {
     token_t tokens[] = { {LPAREN}, {T_NUMBER, 1}, {DOT}, {T_NUMBER, 2}, {RPAREN} };
     const char* expected = "(1 . 2)";
-    run_lisp_test("test_lisp_dotted_pair", "sbcl --script", "portable/lisp/lisp_test_harness.lsp", tokens, 5, expected);
+    run_lisp_test("test_lisp_dotted_pair", sbcl_path, harness_path, tokens, 5, expected);
 }
 
 void test_lisp_no_rparen() {
     token_t tokens[] = { {LPAREN}, {T_NUMBER, 1} };
-    const char* expected = "LISP_PARSE_ERROR"; // Ожидаем, что Lisp выдаст ошибку
-    run_lisp_test("test_lisp_no_rparen", "sbcl --script", "portable/lisp/lisp_test_harness.lsp", tokens, 2, expected);
+    const char* expected = "LISP_PARSE_ERROR";
+    run_lisp_test("test_lisp_no_rparen", sbcl_path, harness_path, tokens, 2, expected);
 }
 
 void test_lisp_array() {
     token_t tokens[] = { {SHARP}, {LPAREN}, {T_NUMBER, 1}, {T_NUMBER, 2}, {RPAREN} };
     const char* expected = "#(1 2)";
-    run_lisp_test("test_lisp_array", "sbcl --script", "portable/lisp/lisp_test_harness.lsp", tokens, 5, expected);
+    run_lisp_test("test_lisp_array", sbcl_path, harness_path, tokens, 5, expected);
 }
 
 void test_lisp_quote() {
     token_t tokens[] = { {QUOTE}, {T_SYMBOL, 0, "MY-SYMBOL"} };
     const char* expected = "(QUOTE MY-SYMBOL)";
-    run_lisp_test("test_lisp_quote", "sbcl --script", "portable/lisp/lisp_test_harness.lsp", tokens, 2, expected);
+    run_lisp_test("test_lisp_quote", sbcl_path, harness_path, tokens, 2, expected);
 }
 
-
 // --- Точка входа в программу ---
-
 int main()
 {
-    // Инициализация подсистем вашего проекта
     init_regions();
     init_objects();
-
-    // Запуск тестов, проверяющих Lisp-парсер
-    printf("\n------------ Testing Lisp parser implementation -----------\n");
-    
+    printf("\n------------ Testing Lisp parser implementation via SBCL -----------\n");
     test_lisp_list_atoms();
     test_lisp_dotted_pair();
     test_lisp_no_rparen();
     test_lisp_array();
     test_lisp_quote();
-    // Добавьте сюда вызовы других ваших test_lisp_... функций
-
     printf("\n-------------------- All tests finished --------------------\n");
-    
     return 0;
 }

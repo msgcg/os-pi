@@ -1,14 +1,14 @@
 ;;;; -------------------------------------------------------------------------
-;;;; Универсальный парсер, адаптированный под тесты проекта os-pi
+;;;; Universal parser, adapted for os-pi project tests
 ;;;;
-;;;; Пакет: LISP-PARSER
-;;;; Экспортирует:
-;;;;   - parse: Главная функция для разбора списка токенов.
+;;;; Package: LISP-PARSER
+;;;; Exports:
+;;;;   - parse: Main function for parsing a list of tokens.
 ;;;;
-;;;; Особенности:
-;;;;   - Работает со списком токенов формата '(:TYPE value)', например '(:LPAREN)'.
-;;;;   - Поддерживает списки, точечные пары, массивы, строки, числа, символы.
-;;;;   - Реализует все читательские макросы: ', `, ,, ,@, #', #\.
+;;;; Features:
+;;;;   - Works with a list of tokens in '(:TYPE value)' format, e.g., '(:LPAREN)'.
+;;;;   - Supports lists, dotted pairs, arrays, strings, numbers, symbols.
+;;;;   - Implements all reader macros: ', `, ,, ,@, #', #\.
 ;;;; -------------------------------------------------------------------------
 
 (defpackage #:lisp-parser
@@ -17,10 +17,10 @@
 
 (in-package #:lisp-parser)
 
-;;; --- Структура ответа парсера ---
-;;; Парсеры возвращают список успешных разборов.
-;;; Каждый успех - это (cons <разобранный-объект> <остаток-токенов>).
-;;; Неудача - это пустой список (nil).
+;;; --- Parser Response Structure ---
+;;; Parsers return a list of successful parses.
+;;; Each success is a (cons <parsed-object> <remaining-tokens>).
+;;; Failure is an empty list (nil).
 
 (defun p-success (result remaining-input)
   (list (cons result remaining-input)))
@@ -28,16 +28,16 @@
 (defun p-failure () nil)
 
 
-;;; --- Базовые комбинаторы ---
+;;; --- Basic Combinators ---
 
 (defun p-app (parser func)
-  "Применяет `func` к результату успешного разбора `parser`."
+  "Applies `func` to the result of a successful `parser` parse."
   (lambda (input)
     (mapcar (lambda (res) (cons (funcall func (car res)) (cdr res)))
             (funcall parser input))))
 
 (defun p-and (&rest parsers)
-  "Применяет парсеры последовательно. Успешен, если все успешны."
+  "Applies parsers sequentially. Succeeds if all are successful."
   (if (null parsers)
       (lambda (input) (p-success nil input))
       (lambda (input)
@@ -51,7 +51,7 @@
                                 sub-res)))))))
 
 (defun p-or (&rest parsers)
-  "Возвращает результат первого успешного парсера."
+  "Returns the result of the first successful parser."
   (lambda (input)
     (loop for p in parsers
           do (let ((res (funcall p input)))
@@ -59,15 +59,15 @@
     (p-failure)))
 
 (defun p-many (parser)
-  "0 или более повторений `parser`."
+  "0 or more repetitions of `parser`."
   (p-or (p-app (p-and parser (p-many parser))
                #'(lambda (res) (cons (car res) (cadr res))))
         (lambda (input) (p-success nil input))))
 
-;;; --- Примитивы для работы с токенами ---
+;;; --- Primitives for Working with Tokens ---
 
 (defun p-token-type (type)
-  "Парсер, ожидающий токен заданного типа."
+  "A parser that expects a token of a given type."
   (lambda (input)
     (if (and input (eq (caar input) type))
         (p-success (car input) (cdr input))
@@ -75,14 +75,14 @@
 
 (defun token-value (token) (second token))
 
-;;; --- Описание грамматики Лиспа ---
+;;; --- Lisp Grammar Description ---
 
-;; Вспомогательная функция для построения списков (в т.ч. точечных)
+;; Helper function to build lists (including dotted pairs)
 (defun build-list (exprs optional-dot-expr)
   (if optional-dot-expr
       (let ((last-expr (car optional-dot-expr)))
         (if (null exprs)
-            last-expr ; Случай (. 2) -> 2, хотя это невалидный синтаксис
+            last-expr ; Case for (. 2) -> 2, although this is invalid syntax
             (let ((rev-exprs (reverse exprs)))
               (reduce #'cons (cdr rev-exprs)
                       :initial-value (cons (car rev-exprs) last-expr)
@@ -90,10 +90,10 @@
       exprs))
 
 (labels (
-    ;; -- Рекурсивные объявления --
+    ;; -- Recursive declarations --
     (p-expr (input) (funcall (p-or #'p-quoted-form #'p-atom #'p-list) input))
     
-    ;; -- Атомарные типы --
+    ;; -- Atomic types --
     (p-atom ()
       (p-or (p-app (p-token-type :T_NUMBER) #'token-value)
             (p-app (p-token-type :T_FLOAT)  #'token-value)
@@ -101,33 +101,33 @@
             (p-app (p-token-type :T_CHAR)   (lambda (tok) (code-char (token-value tok))))
             (p-app (p-token-type :T_SYMBOL) (lambda (tok) (intern (string-upcase (token-value tok)))))))
             
-    ;; -- Списки и точечные пары ( ... ) --
+    ;; -- Lists and dotted pairs ( ... ) --
     (p-list ()
       (p-app (p-and (p-token-type :LPAREN)
                     (p-many #'p-expr)
                     (p-or (p-app (p-and (p-token-type :DOT) #'p-expr) #'second)
-                          (lambda (input) (p-success nil input))) ; Опциональная точечная часть
+                          (lambda (input) (p-success nil input))) ; Optional dotted part
                     (p-token-type :RPAREN))
              (lambda (res)
                (let ((exprs (second res))
                      (dot-expr (third res)))
                  (build-list exprs dot-expr)))))
                  
-    ;; -- Макросы # --
+    ;; -- # macros --
     (p-sharp-macro ()
       (p-and (p-token-type :SHARP)
              (p-or
-              ;; #(...) -> Вектор
+              ;; #(...) -> Vector
               (p-app (p-and (p-token-type :LPAREN) (p-many #'p-expr) (p-token-type :RPAREN))
                      (lambda (res) (coerce (second res) 'vector)))
               ;; #'foo -> (FUNCTION foo)
               (p-app (p-and (p-token-type :T_FUNCTION) #'p-expr)
                      (lambda (res) `(FUNCTION ,(second res)))))))
 
-    ;; -- Конструкции с цитированием --
+    ;; -- Quoted constructs --
     (p-quoted-form ()
       (p-or
-       (p-sharp-macro) ; #(...) и #'...
+       (p-sharp-macro) ; #(...) and #'...
        (p-app (p-and (p-token-type :QUOTE) #'p-expr)
               (lambda (res) `(QUOTE ,(second res))))
        (p-app (p-and (p-token-type :BACKQUOTE) #'p-expr)
@@ -139,25 +139,25 @@
        (p-app (p-and (p-token-type :T_FUNCTION) (p-token-type :T_SYMBOL))
               (lambda (res) `(FUNCTION ,(intern (string-upcase (token-value (second res)))))))))
 
-  ;; -- Главный парсер --
+  ;; -- Main parser --
   (defun final-parser (input)
     (p-expr input))
 )
 
-;;; --- Главный публичный интерфейс ---
+;;; --- Main public interface ---
 
 (defun parse (token-stream)
-  "Разбирает список токенов.
-  Возвращает разобранный объект или возбуждает ошибку."
+  "Parses a list of tokens.
+  Returns the parsed object or raises an error."
   (if (null token-stream)
-      (return-from parse :no-value)) ; Соответствует NOVALUE в C тестах
+      (return-from parse :no-value)) ; Corresponds to NOVALUE in C tests
       
   (let* ((results (final-parser token-stream))
          (first-good-result (car results)))
     (cond
       ((null results)
-       (error "Ошибка парсинга: невалидный синтаксис."))
+       (error "Parse error: invalid syntax."))
       ((not (null (cdr first-good-result)))
-       (error "Ошибка парсинга: остались неразобранные токены: ~s" (cdr first-good-result)))
+       (error "Parse error: unparsed tokens remaining: ~s" (cdr first-good-result)))
       (t
        (car first-good-result)))))

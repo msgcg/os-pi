@@ -1,4 +1,7 @@
 /**
+ * =================================================================
+ *      ФАЙЛ: portable/lisp/lexer.c (ИСПРАВЛЕННАЯ ВЕРСИЯ)
+ * =================================================================
  * @file   lexer.c
  * @author alex <alex@alex-home>
  * @date   Tue Oct  3 18:12:08 2023
@@ -8,7 +11,11 @@
 
 #include <stdio.h>
 #include <limits.h>
+#include <ctype.h>   // <-- ИСПРАВЛЕНИЕ 1: Добавляем для isdigit, isalpha, toupper
 #include "lexer.h"
+
+// ... (весь ваш существующий код до конца файла без изменений) ...
+// ... (cur_symbol, token, boot_load, get_cur_char, skip_white_space, и т.д.) ...
 
 /// текущий символ
 char cur_symbol;
@@ -123,7 +130,7 @@ void skip_white_space()
 int is_symbol(char c)
 {
     char str[] = "+-*/=_&|<>%!^";
-    for (int i = 0; i < sizeof(str); i++)
+    for (int i = 0; i < sizeof(str) -1; i++) // fix: sizeof includes null terminator
 	if (str[i] == c)
 	    return 1;
     return 0;
@@ -154,7 +161,6 @@ int is_delimeter(char c)
 int hex_num()
 {
     long long cur_num =  0;
-    int hex_value;
     const int msb_shr = CHAR_BIT * sizeof(int);
   
     do {
@@ -173,7 +179,7 @@ int hex_num()
     } while (isdigit(cur_symbol) || is_hex_symbol(cur_symbol));
   
     unget_cur_char();
-    return cur_num;
+    return (int)cur_num;
 }
 
 /** 
@@ -185,11 +191,7 @@ int hex_num()
  */
 int get_float_num(int int_num, int sgn)
 {
-    int cnt = 0;
     float float_num = 0;
-    int floatbits = 0;
-    int num = int_num;
-    int temp;
     get_cur_char();
     float count = 1;
     while (!is_delimeter(cur_symbol)) {
@@ -215,7 +217,7 @@ int get_float_num(int int_num, int sgn)
 int get_num()
 {
     int fl = 0;
-    int cur_num = 0;
+    long long cur_num = 0; // Use long long to prevent overflow during calculation
     if (cur_symbol == '0') {
 	get_cur_char();
 	if (cur_symbol == 'x')
@@ -226,25 +228,24 @@ int get_num()
     }
     const int sgn_shr = CHAR_BIT * sizeof(int) - 1;
     int sgn = fl ? -1 : 1;
-    int msb;
+    
     while (!is_delimeter(cur_symbol)) {
 	if (isdigit(cur_symbol)) {
-	    cur_num = cur_num * 10 + sgn * (cur_symbol - '0');
-	    msb = (cur_num >> sgn_shr) & 1;
+	    cur_num = cur_num * 10 + (cur_symbol - '0');
 	    
-	    if (msb != fl && cur_num != 0)
+	    if ( (sgn * cur_num > INT_MAX) || (sgn * cur_num < INT_MIN) )
 		parser_error("number overflow");	      
 	    
 	    get_cur_char();
 	} else if (cur_symbol == '.') {
 	    token.type = T_FLOAT;
-	    return get_float_num(cur_num, sgn);
+	    return get_float_num(sgn * cur_num, sgn);
 	} else {
 	    parser_error("invalid character in number"); 
 	}
     }
     unget_cur_char();
-    return cur_num;
+    return sgn * cur_num;
 }
 
 //прочесть символ
@@ -265,7 +266,7 @@ void get_symbol(char *cur_str)
         cur_str[c++] = cur_symbol;
         get_cur_char();
 
-	if (c > MAX_SYMBOL)
+	if (c >= MAX_SYMBOL)
 	    parser_error("maximum characters in symbol");
     }
     unget_cur_char();
@@ -287,7 +288,7 @@ void get_string(char *cur_str)
     while (cur_symbol != EOF) {
 	if (cur_symbol == '"')
 	    break;
-	else if (c == MAX_STR) {
+	else if (c >= MAX_STR) {
 	    parser_error("maximum characters in string");
 	}
     	else if (cur_symbol == '\\') {
@@ -326,17 +327,15 @@ void get_string(char *cur_str)
  */
 token_t get_comma()
 {
-    char ctr[2];
-    ctr[0] = cur_symbol;
     get_cur_char();
-    ctr[1] = cur_symbol;
-    if (ctr[0] == ',' && ctr[1] == '@') {
+    if (cur_symbol == '@') {
         token.type = COMMA_AT;
     }
     else {
         token.type = COMMA;
         unget_cur_char();
     }
+    return token;
 }
 
 /** 
@@ -349,41 +348,23 @@ token_t get_comma()
  */
 token_t get_sharp()
 {
-    char ctr[2];
-    ctr[0] = cur_symbol;
     get_cur_char();
-    ctr[1] = cur_symbol;
-    if (ctr[0] == '#' && ctr[1] == '\\') {
+    if (cur_symbol == '\\') {
 	token.type = T_CHAR;
 	get_cur_char();
 	token.value = cur_symbol;
-    } else if (ctr[0] == '#' && ctr[1] == '\'') {
+    } else if (cur_symbol == '\'') {
 	token.type = T_FUNCTION;
     } else {
 	token.type = SHARP;
 	unget_cur_char();
     }
+    return token;
 }
 
 /** 
  * Распознает очередную лексему из потока ввода
  * пропускает пустоты (пробелы, переводы строк \n \r, табуляцию)
- * Числа - T_NUMBER (десятичные, шестнадцатеричные 0xFFF)
- * Вещественные числа T_FLOAT (0.3456)
- * Символ - T_SYMBOL (начинается с символа или буквы, далее - символы, буквы, цифры)
- * Разрешенные символы: +-* /=_&|<>%
- *  T_CHAR одиночный символ #\<символ>
- *  LPAREN левая скобка (
- *  RPAREN, // правая скобка )
- *  QUOTE, // символ '
- *  BACKQUOTE, // символ `
- *  COMMA, // символ ,
- *  COMMA_AT, // символ ,@
- *  T_STRING, // строка в кавычках
- *  SHARP, // символ #
- *  T_FUNCTION, // символ #'
- *  DOT,// точка .
- *  END, // если конец потока
  *
  * @return указатель на структуру лексемы
  */
@@ -412,7 +393,6 @@ token_t *get_token()
 	get_comma();
 	break;
     case '"':
-	// Используем get_string для чтения строки в двойных кавычках
 	get_string(token.str); 
 	token.type = T_STRING;
 	break;
@@ -424,11 +404,12 @@ token_t *get_token()
 	break;
     default:
 	if (cur_symbol == '-' || isdigit(cur_symbol)) {
+        char next_char;
 	    if (cur_symbol == '-') {
 	        get_cur_char();
-		char c = cur_symbol;
-		unget_cur_char();
-	        if (!isdigit(c))
+		    next_char = cur_symbol;
+		    unget_cur_char();
+	        if (!isdigit(next_char))
 	            goto get_token_symbol;
 	    }
 	    token.type = T_NUMBER;
@@ -504,4 +485,16 @@ void print_token(token_t *token)
 void reset_buffer()
 {
     buffer_read_pos = buffer_write_pos = 0;
+}
+
+/**
+ * @brief Инициализирует лексер новой строкой для разбора.
+ *        Переключает источник ввода с stdin на предоставленную строку.
+ * @param string Строка с кодом Lisp для синтаксического анализа.
+ */
+void init_lexer(char *string)
+{
+    boot_load = 1;      // Включить режим чтения из памяти
+    boot_code = string; // Установить указатель на начало строки
+    reset_buffer();     // Сбросить состояние буфера
 }

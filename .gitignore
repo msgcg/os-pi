@@ -58,5 +58,6 @@ dkms.conf
 
 # Tools executables
 tools/fs
+tools/sbcl
 html
 latex

@@ -1,3 +1,12 @@
+// =================================================================
+//      ФАЙЛ: portable/lisp/lexer.h (ИСПРАВЛЕННАЯ ВЕРСИЯ)
+// =================================================================
+
+#ifndef LEXER_H_
+#define LEXER_H_
+
+// --- Определения констант и типов ---
+
 #define MAX_STR 500
 #define MAX_SYMBOL 25
 
@@ -25,12 +34,34 @@ typedef struct {
     char str[MAX_STR]; //значение строки 
 } token_t; // ликсема
 
-token_t *get_token();
-void print_token(token_t *token);
-void reset_buffer();
-int isalpha(int c);
-int isdigit(int c);
-int toupper(int c);
+
+// --- Глобальные переменные, используемые в проекте ---
 
 extern char *boot_code;
 extern int boot_load;
+
+
+// --- Объявления функций, доступных извне ---
+
+/**
+ * @brief Инициализирует лексер новой строкой для разбора.
+ * ЭТО ТА САМАЯ ФУНКЦИЯ, КОТОРОЙ НЕ ХВАТАЛО.
+ */
+void init_lexer(char *string);
+
+/**
+ * @brief Возвращает следующий токен из потока.
+ */
+token_t *get_token();
+
+/**
+ * @brief Вспомогательная функция для печати токена (для отладки).
+ */
+void print_token(token_t *token);
+
+/**
+ * @brief Сбрасывает внутренний буфер лексера.
+ */
+void reset_buffer();
+
+#endif // LEXER_H_
