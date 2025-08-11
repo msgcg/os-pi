@@ -75,10 +75,8 @@
 #define NEW_OBJECT(type, val) ((object_t)(val) + (type))
 //Получение указателя на структуру пары из объекта
 #define GET_PAIR(obj) ((pair_t *)(GET_ADDR(obj)))
-//Получение указателя на структуру числа
-#define GET_NUMBER(num) ((number_t *)GET_ADDR(num))
-//Получение указателя на структуру большого числа
-#define GET_BIGNUMBER(num) ((bignumber_t *)GET_ADDR(num))
+//Получение указателя на структуру 32-х битного числа
+#define GET_BIGNUMBER(num) ((bignumber_t *)(GET_ADDR(num)))
 //Получение указателя на структуру функции из объекта
 #define GET_FUNCTION(obj) ((function_t *)(GET_ADDR(obj)))
 //Получение указателя на структуру вещественного числа
@@ -176,18 +174,6 @@ typedef struct function_s
 #endif
 } function_t;
 
-/// Структура 32-х битного числа
-typedef struct number_s {
-    int value; // значение числа
-    struct number_s *next; // указатель на следующее свободное число
-    int free; // Если 1 - число свободно
-#ifdef X32
-    int pad[5]; // выравнивание 12 + 20
-#else
-    int pad[2]; // выравнивание 24 + 8
-#endif
-} number_t;
-
 typedef struct float_s
 {
     float value; // значение вещественного числа
@@ -199,9 +185,6 @@ typedef struct float_s
     int pad[2]; // выравнивание 24 + 8
 #endif
 } float_t;
-
-/// Структура 32-х битного числа
-typedef struct number_s number_t;
 
 /// Структура пары
 typedef struct pair_s

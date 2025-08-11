@@ -6,7 +6,6 @@
 #include "alloc.h"
 #include "lexer.h"
 #include "parser.h"
-#include "eval.h"
 #include "symbols.h"
 #include "eval.h"
 #include "../error.h"
@@ -260,12 +259,6 @@ char *strupr (char *str);
 object_t parse_list();
 object_t parse();
 
-void test_string();
-void test_number();
-void test_symbol();
-void test_expression();
-void test_comments();
-void test_list();
 
 
 void print_token(token_t *token)
