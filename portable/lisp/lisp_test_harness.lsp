@@ -2,7 +2,7 @@
 ;; Usage: sbcl --script lisp_test_harness.lsp input.txt output.txt error.txt
 ;; Parses a list of tokens from input.txt and writes the result to output.txt
 
-(load "boot/parser.lsp")
+(load "portable/lisp/boot/parser.lsp")
 
 (defun main (argv)
   (let ((input     (second argv))
@@ -13,7 +13,7 @@
           (with-open-file (out output :direction :output :if-exists :supersede)
             (let* ((raw (read-line in))
                    (tokens (read-from-string (format nil "(~a)" raw)))
-                   (res (parse tokens)))
+                   (res (parser:parse tokens)))
               (write-line (write-to-string res) out))))
       (error (c)
         (with-open-file (err error-log :direction :output :if-exists :supersede)
