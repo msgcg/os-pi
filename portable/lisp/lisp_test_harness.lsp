@@ -1,34 +1,23 @@
-;; --- LISP TEST HARNESS (FINAL VERSION) ---
-;; Этот скрипт принимает имена файлов как аргументы командной строки.
+;;;; Minimal Lisp harness for the portable C test runner
+;; Usage: sbcl --script lisp_test_harness.lsp input.txt output.txt error.txt
+;; Parses a list of tokens from input.txt and writes the result to output.txt
 
-(load (merge-pathnames "boot/parser.lsp" *load-truename*))
-(in-package #:lisp-parser)
+(load "boot/parser.lsp")
 
-(defun main ()
-  ;; Получаем имена файлов из аргументов командной строки
-  (let* ((args sb-ext:*posix-argv*)
-         (input-file (second args))
-         (output-file (third args))
-         (error-file (fourth args)))
-
-    (unless (and input-file output-file error-file)
-      (format *error-output* "Usage: sbcl --script harness.lsp <input> <output> <error>")
-      (sb-ext:quit :unix-status 1))
-      
+(defun main (argv)
+  (let ((input     (second argv))
+        (output    (third argv))
+        (error-log (fourth argv)))
     (handler-case
-        ;; Открываем файлы и привязываем их к стандартным потокам
-        (with-open-file (input-stream input-file :direction :input)
-          (with-open-file (output-stream output-file :direction :output :if-exists :supersede)
-            (let* ((*standard-input* input-stream)
-                   (*standard-output* output-stream)
-                   (token-string (read-line nil nil nil))
-                   (token-list (read-from-string (format nil "(~a)" token-string)))
-                   (result (parse token-list)))
-              (princ result))))
-      ;; В случае ошибки, пишем в файл ошибок
+        (with-open-file (in input :direction :input)
+          (with-open-file (out output :direction :output :if-exists :supersede)
+            (let* ((raw (read-line in))
+                   (tokens (read-from-string (format nil "(~a)" raw)))
+                   (res (parse tokens)))
+              (write-line (write-to-string res) out))))
       (error (c)
-        (with-open-file (error-stream error-file :direction :output :if-exists :supersede)
-          (format error-stream "LISP_PARSE_ERROR: ~a" c))
-        (sb-ext:quit :unix-status 1)))))
+        (with-open-file (err error-log :direction :output :if-exists :supersede)
+          (format err "~a" c))
+        (sb-ext:exit :code 1)))))
 
-(main)
+(main sb-ext:*posix-argv*)
