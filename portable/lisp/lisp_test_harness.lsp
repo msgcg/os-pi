@@ -3,6 +3,11 @@
 ;; Parses a list of tokens from input.txt and writes the result to output.txt
 
 (load "portable/lisp/boot/parser.lsp")
+(if (null (find-package "PARSER"))
+    (defpackage "PARSER"
+      (:use :common-lisp)
+      (:export parse))
+  (format t "Parser package handled"))
 
 (defun main (argv)
   (let ((input     (second argv))
