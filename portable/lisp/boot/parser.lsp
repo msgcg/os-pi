@@ -22,7 +22,8 @@
   (if (null token-stream)
       (return-from parse :no-value))
 
-  ;; All helper functions are defined locally inside `parse`
+  ;; Все вспомогательные функции определены локально внутри `parse`
+  ;; с помощью `labels`. Тело функции находится ВНУТРИ `labels`.
   (labels (
       ;;; --- Basic Combinators ---
       (p-app (parser func)
@@ -77,7 +78,7 @@
             exprs))
 
       ;; -- Recursive declarations --
-      (p-expr (input) (funcall (p-or #'p-quoted-form #'p-atom #'p-list) input))
+      (p-expr (input) (funcall (p-or (p-quoted-form) (p-atom) (p-list)) input))
       
       ;; -- Atomic types --
       (p-atom ()
@@ -111,7 +112,7 @@
       ;; -- Quoted constructs --
       (p-quoted-form ()
         (p-or
-         #'p-sharp-macro
+         (p-sharp-macro)
          (p-app (p-and (p-token-type :QUOTE) #'p-expr)
                 (lambda (res) `(QUOTE ,(second res))))
          (p-app (p-and (p-token-type :BACKQUOTE) #'p-expr)
@@ -121,9 +122,11 @@
          (p-app (p-and (p-token-type :COMMA_AT) #'p-expr)
                 (lambda (res) `(COMMA-AT ,(second res))))
          (p-app (p-and (p-token-type :T_FUNCTION) (p-token-type :T_SYMBOL))
-                (lambda (res) `(FUNCTION ,(intern (string-upcase (token-value (second res))))))))))
-    
-    ;; The body of the `labels` form: now we call the main helper `p-expr`
+                (lambda (res) `(FUNCTION ,(intern (string-upcase (token-value (second res)))))))))
+    ) ; ИСПРАВЛЕНО: Эта скобка теперь закрывает список определений `labels`.
+      ; Лишняя скобка после этого была удалена.
+
+    ;; ТЕЛО ФУНКЦИИ `parse`, которое является телом `labels`
     (let* ((results (p-expr token-stream))
            (first-good-result (car results)))
       (cond
@@ -132,4 +135,6 @@
         ((not (null (cdr first-good-result)))
          (error "Parse error: unparsed tokens remaining: ~s" (cdr first-good-result)))
         (t
-         (car first-good-result))))))
+         (car first-good-result))))
+  ) ; <- Эта скобка закрывает `labels`
+) ; <- Эта скобка закрывает `defun parse`
