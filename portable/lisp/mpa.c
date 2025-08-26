@@ -5,6 +5,7 @@
 #include "objects.h"
 #include "lexer.h"
 #include "parser.h"
+#include <ctype.h>
 
 /// Все большие числа
 static struct bign bignums[MAX_BIGNUMS];

@@ -1,128 +1,116 @@
-(defpackage #:lisp-parser
-  (:use #:common-lisp)
-  (:export #:parse))
+(defun parse-suc (val)
+  "Элементарный парсер - успешный разбор со значением val"
+  #'(lambda (list) (list (cons val list))))
 
-(in-package #:lisp-parser)
+(defun parse-fail ()
+  "Элементарный парсер - неудачный разбор"
+  #'(lambda (list) nil))
 
-(defun p-success (result remaining-input)
-  (list (cons result remaining-input)))
+(defun parse-pred (pred)
+  "Парсер по предикату, предикат - функция, которая на вход получает символ, на выходе - nil или t."
+  #'(lambda (list)
+      (if (or (null list) (not (funcall pred (car list))))
+          nil
+          (list (cons (car list) (cdr list))))))
 
-(defun p-failure () nil)
+(defun parse-elem (sym)
+  "Элементарный парсер, ожидающий заданный элемент в списке"
+  (parse-pred #'(lambda (x) (eq x sym))))
+
+(defun &&& (&rest parsers)
+  "Последовательный комбинатор"
+  #'(lambda (list)
+      (labels ((apply-parser (parsers list res)
+		 (if (null parsers) (list (cons res list))
+		     (mapcan #'(lambda (p)
+				 (apply-parser (cdr parsers) (cdr p) (append res (list (car p)))))
+			     (funcall (car parsers) list)))))
+	(apply-parser parsers list nil))))
+
+(defun parse-or (&rest parsers)
+  "Параллельный комбинатор"
+  #'(lambda (list)
+      (mapcan #'(lambda (p) (funcall p list)) parsers)))
+		     
+(defun parse-app (parser f)
+  "Комбинатор применения функции ко всем результатам разбора"
+  #'(lambda (list)
+      (let ((res (funcall parser list)))
+	(mapcar #'(lambda (r) (cons (funcall f (car r)) (cdr r))) res))))
+
+(defun parse-many (parser)
+  "Комбинатор - 0 или более повторений"
+  (parse-or (parse-some parser) (parse-suc nil)))
+
+(defun parse-some (parser)
+  "Комбинатор - 1 или более повторений"
+  (parse-app (&&& parser #'(lambda (list) (funcall (parse-many parser) list)))
+	     #'(lambda (x) (cons (car x) (cadr x)))))
+
+;; ---------------
+;; Lisp parser
+;; ---------------
 
 (defun parse (token-stream)
-  (if (null token-stream)
-      (return-from parse :no-value))
-
   (labels (
-      ;; Обёртка: применить функцию к результату парсера
-      (p-app (parser func)
-        (lambda (input)
-          (mapcar (lambda (res) (cons (funcall func (car res)) (cdr res)))
-                  (funcall parser input))))
-
-      ;; Последовательность парсеров
-      (p-and (&rest parsers)
-        (if (null parsers)
-            (lambda (input) (p-success nil input))
-            (lambda (input)
-              (let* ((p1 (car parsers))
-                     (ps (cdr parsers))
-                     (res1 (funcall p1 input)))
-                (loop for r1 in res1
-                      nconc (let ((sub-res (funcall (apply #'p-and ps) (cdr r1))))
-                              (mapcar (lambda (sr)
-                                        (cons (cons (car r1) (car sr)) (cdr sr)))
-                                      sub-res)))))))
-
-      ;; Альтернатива
-      (p-or (&rest parsers)
-        (lambda (input)
-          (loop for p in parsers
-                do (let ((res (funcall p input)))
-                     (when res (return res))))
-          (p-failure))))
-
-      ;; Повторение
-      (p-many (parser)
-        (labels ((many-parser (input)
-                   (let ((first-try (funcall parser input)))
-                     (if first-try
-                         (loop for res in first-try
-                               nconc (let* ((item (car res))
-                                            (remaining (cdr res))
-                                            (next-results (many-parser remaining)))
-                                       (mapcar (lambda (next-res)
-                                                 (cons (cons item (car next-res)) (cdr next-res)))
-                                               next-results)))
-                         (p-success nil input)))))
-          #'many-parser))
-
-      ;; Парсер по типу токена
       (p-token-type (type)
-        (lambda (input)
-          (if (and input (eq (caar input) type))
-              (p-success (car input) (cdr input))
-              (p-failure))))
+        (parse-pred #'(lambda (token) (and token (eq (car token) type)))))
 
-      (token-value (token) (second token))
+      (p-number () (parse-app (p-token-type :T_NUMBER) #'cadr))
+      (p-float () (parse-app (p-token-type :T_FLOAT) #'cadr))
+      (p-string () (parse-app (p-token-type :T_STRING) #'cadr))
+      (p-char () (parse-app (p-token-type :T_CHAR) #'(lambda (tok) (code-char (cadr tok)))))
+      (p-symbol () (parse-app (p-token-type :T_SYMBOL) #'(lambda (tok) (intern (string-upcase (cadr tok))))))
 
-      (build-list (exprs optional-dot-expr)
-        (if optional-dot-expr
-            (let ((last-expr (car optional-dot-expr)))
-              (if (null exprs)
-                  last-expr
-                  (let ((rev-exprs (reverse exprs)))
-                    (reduce #'cons (cdr rev-exprs)
-                            :initial-value (cons (car rev-exprs) last-expr)
-                            :from-end t))))
-            exprs))
+      (p-atom (input) (funcall (parse-or (p-number) (p-float) (p-string) (p-char) (p-symbol)) input))
 
-      ;; --- Основные парсеры ---
-      (p-expr ()
-        (p-or (p-quoted-form) (p-atom) (p-list)))
+      (build-dotted-list (exprs last-expr)
+        (if (null exprs)
+            last-expr
+            (cons (car exprs) (build-dotted-list (cdr exprs) last-expr))))
 
-      (p-atom ()
-        (p-or (p-app (p-token-type :T_NUMBER) #'token-value)
-              (p-app (p-token-type :T_FLOAT)  #'token-value)
-              (p-app (p-token-type :T_STRING) #'token-value)
-              (p-app (p-token-type :T_CHAR)   (lambda (tok) (code-char (token-value tok))))
-              (p-app (p-token-type :T_SYMBOL) (lambda (tok) (intern (string-upcase (token-value tok)))))))
+      (p-list (input)
+        (funcall (parse-app
+         (&&& (p-token-type :LPAREN)
+              (parse-many #'p-expr)
+              (parse-or (parse-app (&&& (p-token-type :DOT) #'p-expr) #'cadr)
+                        (parse-suc nil))
+              (p-token-type :RPAREN))
+         #'(lambda (res)
+             (let ((exprs (cadr res))
+                   (dot-expr (caddr res)))
+               (if dot-expr
+                   (build-dotted-list exprs dot-expr)
+                   exprs))))
+                 input))
 
-      (p-list ()
-        (p-app (p-and (p-token-type :LPAREN)
-                      (p-many (p-expr))
-                      (p-or (p-app (p-and (p-token-type :DOT) (p-expr)) #'second)
-                            (lambda (input) (p-success nil input)))
-                      (p-token-type :RPAREN))
-               (lambda (res)
-                 (let ((exprs (second res))
-                       (dot-expr (third res)))
-                   (build-list exprs dot-expr)))))
+      (p-vector (input)
+        (funcall (parse-app (&&& (p-token-type :SHARP)
+                        (p-token-type :LPAREN)
+                        (parse-many #'p-expr)
+                        (p-token-type :RPAREN))
+                   #'(lambda (res) (coerce (caddr res) 'vector)))
+                 input))
 
-      (p-sharp-macro ()
-        (p-and (p-token-type :SHARP)
-               (p-or
-                (p-app (p-and (p-token-type :LPAREN) (p-many (p-expr)) (p-token-type :RPAREN))
-                       (lambda (res) (coerce (second res) 'vector)))
-                (p-app (p-and (p-token-type :T_FUNCTION) (p-expr))
-                       (lambda (res) `(FUNCTION ,(second res)))))))
+      (p-quote (input) (funcall (parse-app (&&& (p-token-type :QUOTE) #'p-expr) #'(lambda (res) `(QUOTE ,(cadr res)))) input))
+      (p-backquote (input) (funcall (parse-app (&&& (p-token-type :BACKQUOTE) #'p-expr) #'(lambda (res) `(BACKQUOTE ,(cadr res)))) input))
+      (p-comma (input) (funcall (parse-app (&&& (p-token-type :COMMA) #'p-expr) #'(lambda (res) `(COMMA ,(cadr res)))) input))
+      (p-comma-at (input) (funcall (parse-app (&&& (p-token-type :COMMA_AT) #'p-expr) #'(lambda (res) `(COMMA-AT ,(cadr res)))) input))
+      (p-function-quote (input) (funcall (parse-app (&&& (p-token-type :T_FUNCTION) #'p-expr) #'(lambda (res) `(FUNCTION ,(cadr res)))) input))
 
-      (p-quoted-form ()
-        (p-or
-         (p-sharp-macro)
-         (p-app (p-and (p-token-type :QUOTE) (p-expr))
-                (lambda (res) `(QUOTE ,(second res))))
-         (p-app (p-and (p-token-type :BACKQUOTE) (p-expr))
-                (lambda (res) `(BACKQUOTE ,(second res))))
-         (p-app (p-and (p-token-type :COMMA) (p-expr))
-                (lambda (res) `(COMMA ,(second res))))
-         (p-app (p-and (p-token-type :COMMA_AT) (p-expr))
-                (lambda (res) `(COMMA-AT ,(second res))))
-         (p-app (p-and (p-token-type :T_FUNCTION) (p-token-type :T_SYMBOL))
-                (lambda (res) `(FUNCTION ,(intern (string-upcase (token-value (second res))))))))))
-    
+      (p-expr (input)
+        (funcall (parse-or #'p-atom
+                           #'p-list
+                           #'p-vector
+                           #'p-quote
+                           #'p-backquote
+                           #'p-comma
+                           #'p-comma-at
+                           #'p-function-quote)
+                 input))
+      )
     ;; --- Запуск парсера ---
-    (let* ((results (funcall (p-expr) token-stream))
+    (let* ((results (p-expr token-stream))
            (first-good-result (car results)))
       (cond
         ((null results)

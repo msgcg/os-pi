@@ -3,8 +3,7 @@
 ;;; Parses a list of tokens from input.txt and writes the result to output.txt
 
 ;; Шаг 1: Загружаем файл с реализацией парсера.
-;; Этот вызов определит пакет 'lisp-parser' и функцию 'parse' в нём.
-(load "portable/lisp/boot/parser.lsp")
+(load "../boot/parser.lsp")
 
 (defun main (argv)
   (let ((input-file     (second argv))
@@ -20,8 +19,8 @@
                    (token-string (format nil "(~a)" raw-text))
                    ;; Преобразуем строку в список токенов
                    (tokens (read-from-string token-string))
-                   ;; Шаг 2: Вызываем функцию 'parse' из ПРАВИЛЬНОГО пакета 'lisp-parser'.
-                   (result (lisp-parser:parse tokens)))
+                   ;; Шаг 2: Вызываем функцию 'parse'.
+                   (result (parse tokens)))
               ;; Записываем результат (разобранное S-выражение) в выходной файл
               (write-line (write-to-string result) out))))
       ;; В случае любой ошибки парсинга или чтения...

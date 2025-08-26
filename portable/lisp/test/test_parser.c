@@ -86,8 +86,8 @@ void run_lisp_test(const char* test_name, const char* lisp_executable, const cha
 
 // --- Определение гибридных тестов ---
 
-const char* sbcl_path = "tools\\sbcl\\sbcl.exe --script";
-const char* harness_path = "portable\\lisp\\lisp_test_harness.lsp";
+const char* sbcl_path = "sbcl --script";
+const char* harness_path = "../lisp_test_harness.lsp";
 
 void test_lisp_list_atoms() {
     token_t tokens[] = {
