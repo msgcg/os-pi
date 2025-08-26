@@ -22,7 +22,8 @@
                    ;; Шаг 2: Вызываем функцию 'parse'.
                    (result (parse tokens)))
               ;; Записываем результат (разобранное S-выражение) в выходной файл
-              (write-line (write-to-string result) out))))
+              (let ((*print-pretty* nil))
+                (let ((*print-pretty* nil) (*print-readably* t)) (format out "~S" result))))))
       ;; В случае любой ошибки парсинга или чтения...
       (error (c)
         ;; ...записываем сообщение об ошибке в файл ошибок...

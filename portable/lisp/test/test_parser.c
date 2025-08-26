@@ -60,6 +60,9 @@ void run_lisp_test(const char* test_name, const char* lisp_executable, const cha
     }
     
     if (exit_code == 0) {
+        if (strcmp(result_buffer, expected_output) != 0) {
+            printf("Expected: '%s', Got: '%s'\n", expected_output, result_buffer);
+        }
         ASSERT(strcmp(result_buffer, expected_output), 0);
     } else {
         if (strcmp(expected_output, "LISP_PARSE_ERROR") == 0) {
