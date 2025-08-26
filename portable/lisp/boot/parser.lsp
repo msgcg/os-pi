@@ -60,7 +60,7 @@
       (p-float () (parse-app (p-token-type :T_FLOAT) #'cadr))
       (p-string () (parse-app (p-token-type :T_STRING) #'cadr))
       (p-char () (parse-app (p-token-type :T_CHAR) #'(lambda (tok) (code-char (cadr tok)))))
-      (p-symbol () (parse-app (p-token-type :T_SYMBOL) #'(lambda (tok) (intern (string-upcase (cadr tok))))))
+      (p-symbol () (parse-app (p-token-type :T_SYMBOL) #'(lambda (tok) (intern (cadr tok)))))
 
       (p-atom (input) (funcall (parse-or (p-number) (p-float) (p-string) (p-char) (p-symbol)) input))
 

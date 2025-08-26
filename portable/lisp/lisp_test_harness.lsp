@@ -12,18 +12,12 @@
     (handler-case
         (with-open-file (in input-file :direction :input)
           (with-open-file (out output-file :direction :output :if-exists :supersede)
-            (let* (;; Читаем всю строку с токенами из входного файла
-                   (raw-text (read-line in nil :eof))
-                   ;; Оборачиваем строку в скобки, чтобы read-from-string
-                   ;; воспринял её как единый список
-                   (token-string (format nil "(~a)" raw-text))
-                   ;; Преобразуем строку в список токенов
-                   (tokens (read-from-string token-string))
-                   ;; Шаг 2: Вызываем функцию 'parse'.
-                   (result (parse tokens)))
-              ;; Записываем результат (разобранное S-выражение) в выходной файл
-              (let ((*print-pretty* nil))
-                (let ((*print-pretty* nil) (*print-readably* t)) (format out "~S" result))))))
+            (let* ((raw-text (read-line in nil :eof))
+                 (token-string (format nil "(~a)" raw-text))
+                 (tokens (let ((*readtable* (copy-readtable))) (setf (readtable-case *readtable*) :preserve) (read-from-string token-string)))
+                 (result (parse tokens)))
+            (let ((*print-pretty* nil) (*print-readably* t))
+              (format out "~S" result)))))
       ;; В случае любой ошибки парсинга или чтения...
       (error (c)
         ;; ...записываем сообщение об ошибке в файл ошибок...

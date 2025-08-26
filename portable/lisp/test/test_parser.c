@@ -27,7 +27,7 @@ void run_lisp_test(const char* test_name, const char* lisp_executable, const cha
         switch(tokens[i].type) {
             case T_NUMBER: fprintf(input_file, "(:T_NUMBER %d) ", tokens[i].value); break;
             case T_FLOAT:  fprintf(input_file, "(:T_FLOAT %f) ", *(float*)&tokens[i].value); break;
-            case T_STRING: fprintf(input_file, "(:T_STRING \\\"%s\\\") ", tokens[i].str); break;
+            case T_STRING: fprintf(input_file, "(:T_STRING \"%s\") ", tokens[i].str); break;
             case T_SYMBOL: fprintf(input_file, "(:T_SYMBOL \"%s\") ", tokens[i].str); break;
             case T_CHAR:   fprintf(input_file, "(:T_CHAR %d) ", tokens[i].value); break;
             case LPAREN:   fprintf(input_file, "(:LPAREN) "); break;
