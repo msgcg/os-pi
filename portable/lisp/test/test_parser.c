@@ -124,6 +124,14 @@ void test_lisp_quote() {
     run_lisp_test("test_lisp_quote", sbcl_path, harness_path, tokens, 2, expected);
 }
 
+void test_lisp_list_numbers_sep() {
+    token_t tokens[] = {
+        {LPAREN}, {T_NUMBER, 1}, {COMMA}, {T_NUMBER, 2}, {COMMA}, {T_NUMBER, 3}, {RPAREN}
+    };
+    const char* expected = "(1 2 3)";
+    run_lisp_test("test_lisp_list_numbers_sep", sbcl_path, harness_path, tokens, 7, expected);
+}
+
 // --- Точка входа в программу ---
 int main()
 {
@@ -135,6 +143,7 @@ int main()
     test_lisp_no_rparen();
     test_lisp_array();
     test_lisp_quote();
+    test_lisp_list_numbers_sep();
     printf("\n-------------------- All tests finished --------------------\n");
     return 0;
 }

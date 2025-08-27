@@ -43,8 +43,17 @@
   (parse-or (parse-some parser) (parse-suc nil)))
 
 (defun parse-some (parser)
-  "Комбинатор - 1 или более повторений"
+  "Комбинаator - 1 или более повторений"
   (parse-app (&&& parser #'(lambda (list) (funcall (parse-many parser) list)))
+	     #'(lambda (x) (cons (car x) (cadr x)))))
+
+(defun parse-many-sep (parser sep)
+  "Комбинатор - 0 или более повторений с разделителем"
+  (parse-or (parse-some-sep parser sep) (parse-suc nil)))
+
+(defun parse-some-sep (parser sep)
+  "Комбинатор - 1 или более повторений с разделителем"
+  (parse-app (&&& parser (parse-many (parse-app (&&& sep parser) #'cadr)))
 	     #'(lambda (x) (cons (car x) (cadr x)))))
 
 ;; ---------------
@@ -72,7 +81,7 @@
       (p-list (input)
         (funcall (parse-app
          (&&& (p-token-type :LPAREN)
-              (parse-many #'p-expr)
+              (parse-or (parse-many-sep #'p-expr (p-token-type :COMMA)) (parse-many #'p-expr))
               (parse-or (parse-app (&&& (p-token-type :DOT) #'p-expr) #'cadr)
                         (parse-suc nil))
               (p-token-type :RPAREN))
