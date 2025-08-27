@@ -12,7 +12,7 @@ void run_lisp_test(const char* test_name, const char* lisp_executable, const cha
 {
     printf("%s: ", test_name);
     
-    // Определяем имена временных файлов
+    // Определяются имена временных файлов
     const char* input_filename = "temp_lisp_input.txt";
     const char* output_filename = "temp_lisp_output.txt";
     const char* error_filename = "temp_lisp_error.txt";
@@ -44,7 +44,7 @@ void run_lisp_test(const char* test_name, const char* lisp_executable, const cha
     fclose(input_file);
 
     char command[1024];
-    // ФОРМИРУЕМ КОМАНДУ, ПЕРЕДАВАЯ ИМЕНА ФАЙЛОВ КАК АРГУМЕНТЫ
+    // Формируется команда, передавая имена файлов как аргументы
     sprintf(command, "%s %s %s %s %s", 
             lisp_executable, script_path, input_filename, output_filename, error_filename);
     
@@ -70,7 +70,7 @@ void run_lisp_test(const char* test_name, const char* lisp_executable, const cha
         } else {
             printf("Lisp process failed unexpectedly. Expected '%s', got error code %d.\n", 
                    expected_output, exit_code);
-            // Попробуем прочитать файл с ошибками, если он есть
+            // Попытка прочитать файл с ошибками, если он есть
             FILE* err_file = fopen(error_filename, "r");
             if (err_file) {
                 char err_buf[256];
