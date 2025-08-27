@@ -92,44 +92,59 @@ void run_lisp_test(const char* test_name, const char* lisp_executable, const cha
 const char* sbcl_path = "sbcl --script";
 const char* harness_path = "../lisp_test_harness.lsp";
 
-void test_lisp_list_atoms() {
+void test_parse_list_of_atoms() {
+    // Тест разбора списка атомов: число, символ, строка
     token_t tokens[] = {
         {LPAREN}, {T_NUMBER, 45}, {T_SYMBOL, 0, "A"}, {T_STRING, 0, "StrB"}, {RPAREN}
     };
     const char* expected = "(45 A \"StrB\")"; 
-    run_lisp_test("test_lisp_list_atoms", sbcl_path, harness_path, tokens, 5, expected);
+    run_lisp_test("Тест разбора списка атомов", sbcl_path, harness_path, tokens, 5, expected);
 }
 
-void test_lisp_dotted_pair() {
+void test_parse_dotted_pair() {
+    // Тест разбора точечной пары
     token_t tokens[] = { {LPAREN}, {T_NUMBER, 1}, {DOT}, {T_NUMBER, 2}, {RPAREN} };
     const char* expected = "(1 . 2)";
-    run_lisp_test("test_lisp_dotted_pair", sbcl_path, harness_path, tokens, 5, expected);
+    run_lisp_test("Тест разбора точечной пары", sbcl_path, harness_path, tokens, 5, expected);
 }
 
-void test_lisp_no_rparen() {
+void test_parse_list_no_rparen() {
+    // Тест ошибки разбора списка без закрывающей скобки
     token_t tokens[] = { {LPAREN}, {T_NUMBER, 1} };
     const char* expected = "LISP_PARSE_ERROR";
-    run_lisp_test("test_lisp_no_rparen", sbcl_path, harness_path, tokens, 2, expected);
+    run_lisp_test("Тест ошибки разбора: нет ')'", sbcl_path, harness_path, tokens, 2, expected);
 }
 
-void test_lisp_array() {
+void test_parse_array() {
+    // Тест разбора массива
     token_t tokens[] = { {SHARP}, {LPAREN}, {T_NUMBER, 1}, {T_NUMBER, 2}, {RPAREN} };
     const char* expected = "#(1 2)";
-    run_lisp_test("test_lisp_array", sbcl_path, harness_path, tokens, 5, expected);
+    run_lisp_test("Тест разбора массива", sbcl_path, harness_path, tokens, 5, expected);
 }
 
-void test_lisp_quote() {
+void test_parse_quote() {
+    // Тест разбора цитаты
     token_t tokens[] = { {QUOTE}, {T_SYMBOL, 0, "MY-SYMBOL"} };
     const char* expected = "(QUOTE MY-SYMBOL)";
-    run_lisp_test("test_lisp_quote", sbcl_path, harness_path, tokens, 2, expected);
+    run_lisp_test("Тест разбора цитаты", sbcl_path, harness_path, tokens, 2, expected);
 }
 
-void test_lisp_list_numbers_sep() {
+void test_parse_list_numbers_sep() {
+    // Тест разбора списка чисел с запятой в качестве разделителя
     token_t tokens[] = {
         {LPAREN}, {T_NUMBER, 1}, {COMMA}, {T_NUMBER, 2}, {COMMA}, {T_NUMBER, 3}, {RPAREN}
     };
     const char* expected = "(1 2 3)";
-    run_lisp_test("test_lisp_list_numbers_sep", sbcl_path, harness_path, tokens, 7, expected);
+    run_lisp_test("Тест разбора списка чисел с разделителем", sbcl_path, harness_path, tokens, 7, expected);
+}
+
+void test_parse_some_numbers() {
+    // Тест разбора нескольких чисел с помощью parse-some
+    token_t tokens[] = {
+        {T_NUMBER, 1}, {T_NUMBER, 2}, {T_NUMBER, 3}
+    };
+    const char* expected = "(1 2 3)";
+    run_lisp_test("Тест parse-some для чисел", sbcl_path, "../lisp_test_harness_some.lsp", tokens, 3, expected);
 }
 
 // --- Точка входа в программу ---
@@ -137,13 +152,14 @@ int main()
 {
     init_regions();
     init_objects();
-    printf("\n------------ Testing Lisp parser implementation via SBCL -----------\n");
-    test_lisp_list_atoms();
-    test_lisp_dotted_pair();
-    test_lisp_no_rparen();
-    test_lisp_array();
-    test_lisp_quote();
-    test_lisp_list_numbers_sep();
-    printf("\n-------------------- All tests finished --------------------\n");
+    printf("\n------------ Тестирование реализации парсера Lisp через SBCL -----------\n");
+    test_parse_list_of_atoms();
+    test_parse_dotted_pair();
+    test_parse_list_no_rparen();
+    test_parse_array();
+    test_parse_quote();
+    test_parse_list_numbers_sep();
+    test_parse_some_numbers();
+    printf("\n-------------------- Все тесты завершены --------------------\n");
     return 0;
 }

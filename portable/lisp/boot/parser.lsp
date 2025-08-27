@@ -60,71 +60,70 @@
 ;; Lisp parser
 ;; ---------------
 
+(defun p-token-type (type)
+  (parse-pred #'(lambda (token) (and token (eq (car token) type)))))
+
+(defun p-number () (parse-app (p-token-type :T_NUMBER) #'cadr))
+(defun p-float () (parse-app (p-token-type :T_FLOAT) #'cadr))
+(defun p-string () (parse-app (p-token-type :T_STRING) #'cadr))
+(defun p-char () (parse-app (p-token-type :T_CHAR) #'(lambda (tok) (code-char (cadr tok)))))
+(defun p-symbol () (parse-app (p-token-type :T_SYMBOL) #'(lambda (tok) (intern (cadr tok)))))
+
+(defun p-atom (input) (funcall (parse-or (p-number) (p-float) (p-string) (p-char) (p-symbol)) input))
+
+(defun build-dotted-list (exprs last-expr)
+  (if (null exprs)
+      last-expr
+      (cons (car exprs) (build-dotted-list (cdr exprs) last-expr))))
+
+(defun p-list (input)
+  (funcall (parse-app
+   (&&& (p-token-type :LPAREN)
+        (parse-or (parse-many-sep #'p-expr (p-token-type :COMMA)) (parse-many #'p-expr))
+        (parse-or (parse-app (&&& (p-token-type :DOT) #'p-expr) #'cadr)
+                  (parse-suc nil))
+        (p-token-type :RPAREN))
+   #'(lambda (res)
+       (let ((exprs (cadr res))
+             (dot-expr (caddr res)))
+         (if dot-expr
+             (build-dotted-list exprs dot-expr)
+             exprs))))
+           input))
+
+(defun p-vector (input)
+  (funcall (parse-app (&&& (p-token-type :SHARP)
+                  (p-token-type :LPAREN)
+                  (parse-many #'p-expr)
+                  (p-token-type :RPAREN))
+             #'(lambda (res) (coerce (caddr res) 'vector)))
+           input))
+
+(defun p-quote (input) (funcall (parse-app (&&& (p-token-type :QUOTE) #'p-expr) #'(lambda (res) `(QUOTE ,(cadr res)))) input))
+(defun p-backquote (input) (funcall (parse-app (&&& (p-token-type :BACKQUOTE) #'p-expr) #'(lambda (res) `(BACKQUOTE ,(cadr res)))) input))
+(defun p-comma (input) (funcall (parse-app (&&& (p-token-type :COMMA) #'p-expr) #'(lambda (res) `(COMMA ,(cadr res)))) input))
+(defun p-comma-at (input) (funcall (parse-app (&&& (p-token-type :COMMA_AT) #'p-expr) #'(lambda (res) `(COMMA-AT ,(cadr res)))) input))
+(defun p-function-quote (input) (funcall (parse-app (&&& (p-token-type :T_FUNCTION) #'p-expr) #'(lambda (res) `(FUNCTION ,(cadr res)))) input))
+
+(defun p-expr (input)
+  (funcall (parse-or #'p-atom
+                     #'p-list
+                     #'p-vector
+                     #'p-quote
+                     #'p-backquote
+                     #'p-comma
+                     #'p-comma-at
+                     #'p-function-quote)
+           input))
+
 (defun parse (token-stream)
-  (labels (
-      (p-token-type (type)
-        (parse-pred #'(lambda (token) (and token (eq (car token) type)))))
-
-      (p-number () (parse-app (p-token-type :T_NUMBER) #'cadr))
-      (p-float () (parse-app (p-token-type :T_FLOAT) #'cadr))
-      (p-string () (parse-app (p-token-type :T_STRING) #'cadr))
-      (p-char () (parse-app (p-token-type :T_CHAR) #'(lambda (tok) (code-char (cadr tok)))))
-      (p-symbol () (parse-app (p-token-type :T_SYMBOL) #'(lambda (tok) (intern (cadr tok)))))
-
-      (p-atom (input) (funcall (parse-or (p-number) (p-float) (p-string) (p-char) (p-symbol)) input))
-
-      (build-dotted-list (exprs last-expr)
-        (if (null exprs)
-            last-expr
-            (cons (car exprs) (build-dotted-list (cdr exprs) last-expr))))
-
-      (p-list (input)
-        (funcall (parse-app
-         (&&& (p-token-type :LPAREN)
-              (parse-or (parse-many-sep #'p-expr (p-token-type :COMMA)) (parse-many #'p-expr))
-              (parse-or (parse-app (&&& (p-token-type :DOT) #'p-expr) #'cadr)
-                        (parse-suc nil))
-              (p-token-type :RPAREN))
-         #'(lambda (res)
-             (let ((exprs (cadr res))
-                   (dot-expr (caddr res)))
-               (if dot-expr
-                   (build-dotted-list exprs dot-expr)
-                   exprs))))
-                 input))
-
-      (p-vector (input)
-        (funcall (parse-app (&&& (p-token-type :SHARP)
-                        (p-token-type :LPAREN)
-                        (parse-many #'p-expr)
-                        (p-token-type :RPAREN))
-                   #'(lambda (res) (coerce (caddr res) 'vector)))
-                 input))
-
-      (p-quote (input) (funcall (parse-app (&&& (p-token-type :QUOTE) #'p-expr) #'(lambda (res) `(QUOTE ,(cadr res)))) input))
-      (p-backquote (input) (funcall (parse-app (&&& (p-token-type :BACKQUOTE) #'p-expr) #'(lambda (res) `(BACKQUOTE ,(cadr res)))) input))
-      (p-comma (input) (funcall (parse-app (&&& (p-token-type :COMMA) #'p-expr) #'(lambda (res) `(COMMA ,(cadr res)))) input))
-      (p-comma-at (input) (funcall (parse-app (&&& (p-token-type :COMMA_AT) #'p-expr) #'(lambda (res) `(COMMA-AT ,(cadr res)))) input))
-      (p-function-quote (input) (funcall (parse-app (&&& (p-token-type :T_FUNCTION) #'p-expr) #'(lambda (res) `(FUNCTION ,(cadr res)))) input))
-
-      (p-expr (input)
-        (funcall (parse-or #'p-atom
-                           #'p-list
-                           #'p-vector
-                           #'p-quote
-                           #'p-backquote
-                           #'p-comma
-                           #'p-comma-at
-                           #'p-function-quote)
-                 input))
-      )
-    ;; --- Запуск парсера ---
-    (let* ((results (p-expr token-stream))
-           (first-good-result (car results)))
-      (cond
-        ((null results)
-         (error "Parse error: invalid syntax."))
-        ((cdr first-good-result)
-         (error "Parse error: unparsed tokens remaining: ~s" (cdr first-good-result)))
-        (t
-         (car first-good-result))))))
+  ;; --- Запуск парсера ---
+  (let* ((results (p-expr token-stream))
+         (first-good-result (car results)))
+    (cond
+      ((null results)
+       (error "Parse error: invalid syntax."))
+      ((cdr first-good-result)
+       (error "Parse error: unparsed tokens remaining: ~s" (cdr first-good-result)))
+      (t
+       (car first-good-result)))))
